@@ -1,6 +1,6 @@
 ---
 title: "Case study: a Next.js + Payload + Supabase app moved from Vercel to Workers"
-description: "The timeline, decisions and trade-offs of moving a Next.js 16 + Payload + Supabase catalog site from Vercel to Workers in one day, with links to the recipe for each step."
+description: "The timeline, decisions and trade-offs of moving a Next.js 16 + Payload + Supabase content site from Vercel to Workers in one day, with links to the recipe for each step."
 tags: [cookbook, cloudflare]
 topics: [cloudflare, workers, opennext, nextjs, payload, supabase, hyperdrive, workers-cache, vercel-migration, case-study]
 date: 2026-11-03
@@ -8,7 +8,7 @@ path: migrate-from-vercel/case-study-nextjs-payload-supabase.md
 ---
 # Case study: a Next.js + Payload + Supabase app moved from Vercel to Workers
 
-The app is a Next.js 16.3.8 catalog site with Payload 3 at `/cms`, Supabase Postgres and auth, and Cache Components on. It moved from Vercel to Workers on 3 Nov 2026, when its Vercel usage ran out. This page records what happened and why. The how is in the recipes it links; each one stands alone. Two smaller Next.js apps moved the same day with the same recipes.
+The app is a Next.js 16.3.8 content site with Payload 3 at `/cms`, Supabase Postgres and auth, and Cache Components on. It moved from Vercel to Workers on 3 Nov 2026, when its Vercel usage ran out. This page records what happened and why. The how is in the recipes it links; each one stands alone. Two smaller Next.js apps moved the same day with the same recipes.
 
 ## Timeline
 

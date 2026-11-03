@@ -34,7 +34,7 @@ Read this before you move an app, because a plan limit looks like a code bug. It
 | Cron triggers, free plan | 5 per account | Deploy silently skips the rest. |
 | Subrequests and connections | per-request limits apply | Use Hyperdrive and one connection per query; see [../02-data/hyperdrive-supabase-postgres.md](../02-data/hyperdrive-supabase-postgres.md). |
 | Cloudflare for SaaS custom hostnames | 100 included on a Free, Pro or Business zone, then $0.10 each a month, up to 50,000; apex proxying is Enterprise | See [../04-domains/cloudflare-for-saas-custom-hostnames.md](../04-domains/cloudflare-for-saas-custom-hostnames.md). |
-| PBKDF2 iterations | capped at 100,000 in production runtime | Local workerd has no cap; only `wrangler dev --remote` shows it. See [../05-app-features/payload-cms-on-workers.md](../05-app-features/payload-cms-on-workers.md). |
+| PBKDF2 iterations | 100,000 on a deployed Worker: observed, not documented | The error text is workerd's (`checkPbkdfLimits` in `src/workerd/api/crypto/impl.c++`), but the number comes from the hosted runtime; open-source workerd, which `wrangler dev` runs, sets no cap. Only a deployed Worker or `wrangler dev --remote` shows it. See [../05-app-features/payload-cms-on-workers.md](../05-app-features/payload-cms-on-workers.md). |
 
 
 ## Code

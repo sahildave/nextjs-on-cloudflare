@@ -34,7 +34,7 @@ OpenNext over vinext: Cloudflare recommends vinext for new apps, but vinext's Ca
    "cf:deploy": "opennextjs-cloudflare deploy"
    ```
 3. Create `wrangler.jsonc` and `open-next.config.ts` (Code below). The R2 bucket for the incremental cache must exist: `pnpm exec wrangler r2 bucket create <your-app>-next-cache`.
-4. Create `worker.ts` (Code below). It wraps OpenNext's generated handler so you can add headers, redirects and cron. Exclude it from `tsconfig.json`, because it imports a file that exists only after a build.
+4. Create `worker.ts` (Code below). It wraps OpenNext's generated handler so you can add headers, redirects and cron. One typing rule for every `worker.ts` in this cookbook: exclude `worker.ts` from `tsconfig.json`, and put `// @ts-ignore` on each import from `./.open-next/worker.js`, a file that exists only after a build. `@ts-expect-error` fails in an editor once the build has run, because the error it expects is gone.
 5. Edit `next.config.mjs`: set `images.unoptimized: true` and list workerd-only packages in `serverExternalPackages` (Code below).
 6. Add `.open-next`, `.wrangler` and `.dev.vars*` to `.gitignore`.
 7. If you use `cacheComponents`, apply the two Cache Components recipes (next section).
@@ -66,6 +66,8 @@ Product values are placeholders. Bindings for Hyperdrive, cron and domains are e
 	"name": "your-app",
 	"main": "worker.ts",
 	"compatibility_date": "2026-10-01",
+	// From compatibility date 2026-08-04, nodejs_compat is on by default and this
+	// entry is ignored. It is kept so an older date still works.
 	"compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
 	"assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
 	// Workers Cache: see workers-cache-edge-caching.md
@@ -78,14 +80,10 @@ Product values are placeholders. Bindings for Hyperdrive, cron and domains are e
 	// Run next to the database, not next to the visitor: a page makes dozens of queries.
 	"placement": { "region": "aws:eu-central-1" },
 	"limits": { "cpu_ms": 300000 },
-	"routes": [
-		{ "pattern": "your-domain.com", "custom_domain": true },
-		{ "pattern": "www.your-domain.com", "custom_domain": true }
-	],
+	// www is not a route: a Cloudflare Redirect Rule sends it to the apex (www-redirect-rule.md).
+	"routes": [{ "pattern": "your-domain.com", "custom_domain": true }],
 	// Off once the domain is live: *.workers.dev would serve the site outside the zone's WAF.
 	"workers_dev": false,
-	// On, so branch deploys (versions upload) get a preview URL.
-	"preview_urls": true,
 	"r2_buckets": [
 		{ "binding": "NEXT_INC_CACHE_R2_BUCKET", "bucket_name": "your-app-next-cache" }
 	],
@@ -105,6 +103,8 @@ Product values are placeholders. Bindings for Hyperdrive, cron and domains are e
 ```
 
 Add the `hyperdrive` and `triggers` blocks from the recipes that cover them.
+
+`www` is redirected to the apex by a Cloudflare Redirect Rule, outside the Worker: [../04-domains/www-redirect-rule.md](../04-domains/www-redirect-rule.md). That is the choice every recipe here assumes. The alternative is a second custom domain (`www.your-domain.com`) and a 308 at the top of `worker.ts`, before any cache; it starts the Worker for every `www` request. Use it only if you cannot add Redirect Rules to the zone.
 
 ### `open-next.config.ts`
 
@@ -130,23 +130,18 @@ export default defineCloudflareConfig({
 ### `worker.ts`
 
 ```ts
-// @ts-expect-error `.open-next/worker.js` is generated at build time
+// @ts-ignore `.open-next/worker.js` exists only after a build; worker.ts is excluded from tsconfig
 import { default as handler } from "./.open-next/worker.js";
 
 export default {
   async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-    // Example: send www to the apex.
-    if (url.hostname === "www.your-domain.com") {
-      url.hostname = "your-domain.com";
-      return Response.redirect(url.toString(), 308);
-    }
+    // Headers, redirects and the cache wrapper from the other recipes go here.
     return handler.fetch(request, env, ctx);
   },
 } satisfies ExportedHandler<{ WORKER_SELF_REFERENCE: Fetcher }>;
 
 // The Durable Object classes must be exported from the entry file.
-// @ts-expect-error `.open-next/worker.js` is generated at build time
+// @ts-ignore generated at build time
 export { DOQueueHandler, DOShardedTagCache } from "./.open-next/worker.js";
 ```
 
@@ -197,7 +192,7 @@ env: { SITE_CONTENT_FILES: JSON.stringify(contentFiles()) }
 
 Files the OG image reads are inlined as modules.
 
-Watch the size: Next copies every `next.config` `env` entry into every bundle. One app inlined 1.7 MB of HTML through `env` and it cost about 7 MB of Worker. Import large text as a module instead (`import page from "./page.html" with { type: "text" }`).
+Watch the size: Next copies every `next.config` `env` entry into every bundle. One app inlined 1.7 MB of HTML through `env` and it cost about 7 MB of Worker. Keep large text out of `env`. In `worker.ts`, which wrangler bundles, a plain `import page from "./page.html"` loads the file as a string (wrangler's default `Text` module rule covers `.html`, `.txt` and `.sql`). That rule does not apply under `src/`, which Next's bundler compiles. **Unverified**: for app code, a webpack `asset/source` rule in `next.config` is the equivalent; none of the apps here used it.
 
 ## Verify
 

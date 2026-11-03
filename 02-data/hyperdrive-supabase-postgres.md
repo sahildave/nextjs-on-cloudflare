@@ -21,14 +21,15 @@ This file owns the Hyperdrive config and the `pg` pool (`RequestScopedPool`). Fo
 
 ## Steps
 
-1. Create the Hyperdrive config against the Supabase **session pooler** (port `5432`, not the transaction pooler on `6543`). Leave `?sslmode` params off the URL. Turn caching off so CMS edits show at once. Run `wrangler hyperdrive create --help` for the flag names on your wrangler version, including the one that sets the origin connection limit.
+1. Create the Hyperdrive config against the Supabase **session pooler** (port `5432`, not the transaction pooler on `6543`). Leave `?sslmode` params off the URL. Turn caching off so CMS edits show at once, and set the origin connection limit (`--origin-connection-limit`, step 2).
 
    ```bash
    wrangler hyperdrive create my-app-db \
      --connection-string="$(your-secret-manager print DATABASE_URI)" \
-     --caching-disabled
+     --caching-disabled \
+     --origin-connection-limit=10
    ```
-2. Set the origin connection limit below the pooler's pool size. Hyperdrive defaults to 60; Supabase's session pooler takes 15, and above that Supavisor refuses with `EMAXCONNSESSION`. With a limit of 10, Hyperdrive queues instead of failing.
+2. Set the origin connection limit below the pooler's pool size. Supabase's session pooler takes 15, and above that Supavisor refuses with `EMAXCONNSESSION`. With a limit of 10, Hyperdrive queues instead of failing. Without the flag, one config opened up to 60 origin connections: observed, not documented (Cloudflare's [limits page](https://developers.cloudflare.com/hyperdrive/platform/limits/) gives a maximum of about 100 per config on Paid and 20 on Free). Check what your config has with `wrangler hyperdrive get <HYPERDRIVE_ID>`; change it with `wrangler hyperdrive update <HYPERDRIVE_ID> --origin-connection-limit=10`.
 3. Bind it in `wrangler.jsonc` with a `localConnectionString`. `opennextjs-cloudflare deploy` and `preview` will not start without one.
 4. Pin the Worker next to the database with `placement` (below). Check the `cf-placement` response header: `remote-FRA` means it worked.
 5. Add `src/lib/db/hyperdrive.ts` and `src/lib/db/payload-pool.ts` from the Code section.
@@ -308,7 +309,7 @@ Fire 40 parallel requests at a database-backed page against `opennextjs-cloudfla
 
 - **"Cannot perform I/O on behalf of a different request", or a hung isolate under a burst** → a per-isolate `pg.Pool` handed one request another's socket. `maxUses: 1` was not enough in other projects' tests under a 40-request burst. Use the request-scoped pool above and let Hyperdrive pool.
 - **Payload reads its DB config once at startup, Hyperdrive's string is per request** → read the binding inside `connect()` (as `RequestScopedPool` does), not in `payload.config.ts`.
-- **`EMAXCONNSESSION` from Supavisor** → Hyperdrive's `origin_connection_limit` defaults to 60 and the session pooler takes 15. Set it to 10.
+- **`EMAXCONNSESSION` from Supavisor** → Hyperdrive opened more origin connections than the session pooler's 15 (60 without a limit, observed, not documented; check with `wrangler hyperdrive get <HYPERDRIVE_ID>`). Set `--origin-connection-limit=10`.
 - **"Connection terminated unexpectedly" on a direct TLS connection to the pooler** → Workers cannot hold that session. Go through Hyperdrive.
 - **`unhandledRejection: This socket has been closed`, ~5k an hour** → a per-query `pg.Client` closed while pg-cloudflare's read was pending, and nobody listened for `'error'`. Add the listener before `connect()`.
 - **Same error from `postgres.js` after `sql.end()`** → three unguarded `tcp.emit('error')` sites in its Workers polyfill. Patch: [./postgres-js-on-workers.md](./postgres-js-on-workers.md).

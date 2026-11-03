@@ -24,7 +24,7 @@ On Workers you get Workers Logs (turned on in `wrangler.jsonc`), `wrangler tail`
 4. Make environment explicit. `wrangler.jsonc` defaults `"vars": { "APP_ENV": "preview" }`, and only the main-branch deploy passes `--var=APP_ENV:production`. The error tracker filters its alerts and emails on `environment = production`, so a hand deploy or a preview cannot file production issues. Also use a separate `APP_ENV=preview` value on any test Worker.
 5. Tag every error with `release: GIT_SHA`, so an error ties to the commit that threw it.
 6. Report server errors from `instrumentation.ts` (`onRequestError`) and report caught errors from your catch blocks with a helper (Code below).
-7. Send events after the response. In a Next request, use `after()` from `next/server`; on Workers it keeps the isolate alive through `waitUntil`. Never `await` a capture before a redirect or API response (the `/d` and `/go` redirects waited on PostHog per click before this was fixed).
+7. Send events after the response. In a Next request, use `after()` from `next/server`; on Workers it keeps the isolate alive through `waitUntil`. Never `await` a capture before a redirect or API response (two click-through redirects waited on PostHog per click before this was fixed).
 8. Upload source maps to the tracker, not to Cloudflare. Cloudflare's upload cap is 60 MiB and a Next + Payload app's maps exceeded it, so `"upload_source_maps": false` and upload them to PostHog instead.
 9. Alert on failed cron jobs by email: see [../05-app-features/cron-triggers.md](../05-app-features/cron-triggers.md).
 

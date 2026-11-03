@@ -8,12 +8,12 @@ path: 03-caching/cache-invalidation-and-purge.md
 ---
 # Cache invalidation and purge on Cloudflare Workers
 
-You need this when public pages sit in Workers Cache (`./workers-cache-edge-caching.md`) and an editor, a webhook or a cron changes the data. The recipe expires Next cache tags, waits until the tag write has landed, purges Workers Cache, purges a second time once the regional tag cache has expired, and warms the home page. It also moves OpenNext's tag-cache Durable Objects next to the Worker, which cut tag lookups from 158 ms to 16 ms.
+You need this when public pages sit in Workers Cache ([workers-cache-edge-caching.md](./workers-cache-edge-caching.md)) and an editor, a webhook or a cron changes the data. The recipe expires Next cache tags, waits until the tag write has landed, purges Workers Cache, purges a second time once the regional tag cache has expired, and warms the home page. It also moves OpenNext's tag-cache Durable Objects next to the Worker, which cut tag lookups from 158 ms to 16 ms.
 
 ## Prerequisites
 
-- Next 16.3.8 with `cacheComponents`, `@opennextjs/cloudflare` 1.20.15, wrangler 4.156.x. See [`nextjs-on-workers-opennext.md`](../01-start/nextjs-on-workers-opennext.md) and `./cache-components-ppr-on-workers.md`.
-- Workers Cache on (`"cache": { "enabled": true }`) and the headers from `./workers-cache-edge-caching.md`.
+- Next 16.3.8 with `cacheComponents`, `@opennextjs/cloudflare` 1.20.15, wrangler 4.156.x. See [`nextjs-on-workers-opennext.md`](../01-start/nextjs-on-workers-opennext.md) and [cache-components-ppr-on-workers.md](./cache-components-ppr-on-workers.md).
+- Workers Cache on (`"cache": { "enabled": true }`) and the headers from [workers-cache-edge-caching.md](./workers-cache-edge-caching.md).
 - Bindings: `NEXT_INC_CACHE_R2_BUCKET` (R2), `NEXT_CACHE_DO_QUEUE` and `NEXT_TAG_CACHE_DO_SHARDED` (Durable Objects), and a self service binding `WORKER_SELF_REFERENCE`.
 - The tests use `node:test` with `mock.module`, which needs `--experimental-test-module-mocks` on Node versions where it is still flagged. The recipe was built on Node 24.
 
@@ -23,7 +23,7 @@ You need this when public pages sit in Workers Cache (`./workers-cache-edge-cach
 2. Declare the bindings, DO classes and migration in `wrangler.jsonc`, and re-export `DOQueueHandler` and `DOShardedTagCache` from `worker.ts`.
 3. Add `src/lib/tag-cache.ts` and `src/lib/edge-cache.ts`.
 4. Route every write through `expireTagsAndPurge(tags)`. In Payload, do it from `afterChange` and `afterDelete` hooks. After a direct `payload.db.*` write, which skips those hooks, call it yourself.
-5. Tag the cached reads. Every public read carries one shared tag (`catalog`); a single-doc read adds its own (`app:<slug>`).
+5. Tag the cached reads. Every public read carries one shared tag (`content`); a single-doc read adds its own (`item:<slug>`).
 6. Run the tests, deploy, publish a change, and run Verify.
 
 Order inside `expireTagsAndPurge` matters:
@@ -62,7 +62,7 @@ A purge that runs before the tag write lets the next request re-render from the 
 ### `worker.ts` (relevant part)
 
 ```ts
-// @ts-expect-error `.open-next/worker.js` is generated at build time
+// @ts-ignore `.open-next/worker.js` exists only after a build; worker.ts is excluded from tsconfig
 export { DOQueueHandler, DOShardedTagCache } from "./.open-next/worker.js";
 ```
 
@@ -139,15 +139,18 @@ import { workAsyncStorage } from "next/dist/server/app-render/work-async-storage
 import { executeRevalidates } from "next/dist/server/revalidation-utils";
 import { TAG_CACHE_REGIONAL_TTL_SEC } from "./tag-cache";
 
-/** Every public read carries CATALOG_TAG. */
-export const CATALOG_TAG = "catalog";
+/** Every public read carries CONTENT_TAG. */
+export const CONTENT_TAG = "content";
 
 /** The Worker's binding to itself (`WORKER_SELF_REFERENCE` in wrangler.jsonc). */
 type SelfBinding = { fetch(request: Request): Promise<Response> };
 
+/** What `ctx.cache.purge()` resolves to (Workers Cache docs, "Return value"). */
+type PurgeResult = { success: boolean; errors: { code: number; message: string }[] };
+
 type PurgeableContext = {
   waitUntil(promise: Promise<unknown>): void;
-  cache?: { purge(options: { purgeEverything: true }): Promise<unknown> };
+  cache?: { purge(options: { purgeEverything: true }): Promise<PurgeResult> };
 };
 
 /**
@@ -175,9 +178,13 @@ export function purgeEdgeCache(): void {
     return;
   }
   const { cache } = ctx;
+  // A rate-limited or refused purge resolves with success: false; it does not throw.
   const purge = () =>
     cache
       .purge({ purgeEverything: true })
+      .then((result) => {
+        if (!result.success) console.warn("edge cache purge failed", result.errors);
+      })
       .catch((error) => console.warn("edge cache purge failed", error));
   ctx.waitUntil(purge());
   // Another data center can read the tag's old time from its own cache for up
@@ -250,7 +257,7 @@ export async function expireTagsAndPurge(
   { removed = false }: { removed?: boolean } = {},
 ): Promise<void> {
   for (const tag of tags)
-    revalidateTag(tag, tag === CATALOG_TAG && !removed ? "max" : { expire: 0 });
+    revalidateTag(tag, tag === CONTENT_TAG && !removed ? "max" : { expire: 0 });
   const store = workAsyncStorage.getStore();
   if (store) await executeRevalidates(store);
   purgeEdgeCache();
@@ -267,7 +274,7 @@ import type {
   CollectionAfterDeleteHook,
   PayloadRequest,
 } from "payload";
-import { CATALOG_TAG, expireTagsAndPurge } from "../../lib/edge-cache";
+import { CONTENT_TAG, expireTagsAndPurge } from "../../lib/edge-cache";
 
 type Doc = { id?: number | string; slug?: string | null; _status?: string };
 type TagsOf<T extends Doc> = (doc: T, req: PayloadRequest) => Promise<string[]>;
@@ -277,7 +284,7 @@ const isLive = (doc: Doc | undefined) =>
   doc?.id != null && (doc._status === undefined || doc._status === "published");
 
 /**
- * Expires `catalog` plus the doc's tags; `removed` when a doc left the site.
+ * Expires `content` plus the doc's tags; `removed` when a doc left the site.
  * Outside Next (the Payload CLI, the import scripts) `revalidateTag` has no
  * request scope and throws; the write must not fail for it.
  */
@@ -288,7 +295,7 @@ const expire = async <T extends Doc>(
   removed = false,
 ) => {
   try {
-    const tags = new Set([CATALOG_TAG]);
+    const tags = new Set([CONTENT_TAG]);
     for (const doc of docs)
       for (const tag of await tagsOf(doc, req)) tags.add(tag);
     await expireTagsAndPurge(tags, { removed });
@@ -327,7 +334,7 @@ export const revalidateHooks = <T extends Doc>(tagsOf: TagsOf<T>) => {
 };
 ```
 
-Use it per collection: `hooks: revalidateHooks(async (doc) => ["app:" + doc.slug])`. Return early on `disableRevalidate` before any dynamic import: importers load a Payload config copy that is deleted once it connects, so a lazy import in a hook fails every import write.
+Use it per collection: `hooks: revalidateHooks(async (doc) => ["item:" + doc.slug])`. Return early on `disableRevalidate` before any dynamic import: importers load a Payload config copy that is deleted once it connects, so a lazy import in a hook fails every import write.
 
 ### `scripts/edge-cache.test.ts` (trimmed)
 
@@ -345,7 +352,12 @@ let ctx: {
 };
 const withPurge = () => ({
   waitUntil: (p: Promise<unknown>) => void p,
-  cache: { purge: async () => void log.push("purge") },
+  cache: {
+    purge: async () => {
+      log.push("purge");
+      return { success: true, errors: [] };
+    },
+  },
 });
 ctx = withPurge();
 let env: Record<string, unknown> = {};
@@ -384,19 +396,19 @@ afterEach(() => {
 
 test("tags are written before Workers Cache is purged", async () => {
   const { expireTagsAndPurge } = await import("../src/lib/edge-cache");
-  await expireTagsAndPurge(["catalog", "app:foo"]);
+  await expireTagsAndPurge(["content", "item:foo"]);
   assert.deepEqual(log, [
-    'revalidate catalog "max"',
-    'revalidate app:foo {"expire":0}',
+    'revalidate content "max"',
+    'revalidate item:foo {"expire":0}',
     "tags written",
     "purge",
   ]);
 });
 
-test("a removed doc expires catalog at once", async () => {
+test("a removed doc expires content at once", async () => {
   const { expireTagsAndPurge } = await import("../src/lib/edge-cache");
-  await expireTagsAndPurge(["catalog"], { removed: true });
-  assert.equal(log[0], 'revalidate catalog {"expire":0}');
+  await expireTagsAndPurge(["content"], { removed: true });
+  assert.equal(log[0], 'revalidate content {"expire":0}');
 });
 
 test("a Worker without the purge API warns", async (t) => {
@@ -424,7 +436,7 @@ test("the edge cache is purged again after the regional tag-cache window", async
 });
 ```
 
-The full file also tests the Payload hooks (publish marks `catalog` stale and expires `app:<slug>`; unpublish and delete expire it at once) and the home warm (one GET through the self binding with a `text/html` Accept, a failed warm only warns).
+The full file also tests the Payload hooks (publish marks `content` stale and expires `item:<slug>`; unpublish and delete expire it at once) and the home warm (one GET through the self binding with a `text/html` Accept, a failed warm only warns).
 
 ### `scripts/tag-cache.test.ts` (what it checks)
 
@@ -439,12 +451,12 @@ Keep a test like this. It is what tells you after an OpenNext upgrade that the p
 
 ```bash
 # 1. Prime the cache.
-curl -s -o /dev/null https://your-domain.com/apps/some-app
-curl -sI https://your-domain.com/apps/some-app | grep -i cf-cache-status   # HIT
+curl -s -o /dev/null https://your-domain.com/items/some-item
+curl -sI https://your-domain.com/items/some-item | grep -i cf-cache-status   # HIT
 
 # 2. Publish a change in the CMS (or call your write path), then:
-curl -s https://your-domain.com/apps/some-app | grep -c "new tagline"      # 1 on the next request
-curl -sI https://your-domain.com/apps/some-app | grep -i cf-cache-status   # MISS, then HIT
+curl -s https://your-domain.com/items/some-item | grep -c "new tagline"      # 1 on the next request
+curl -sI https://your-domain.com/items/some-item | grep -i cf-cache-status   # MISS, then HIT
 
 # 3. Seven seconds later the second purge and the home warm have run.
 wrangler tail --format=pretty   # no "edge cache purge skipped", no "home page warm failed"
@@ -457,13 +469,15 @@ Tag lookups: before the pinning, each `getTagData` cost ~158 ms with 3.2 lookups
 
 - **Old page comes back after a purge** → the purge ran before the tag write, so the next request re-rendered from the stale data cache. Await `executeRevalidates` first.
 - **A write from another data center is hidden for up to 5 s** → the regional tag cache. The second purge at 7 s closes that for pages. A render that started before the write and finishes after the second purge, or a failed purge, can still leave a stale page cached until `s-maxage`.
-- **A direct `payload.db.*` write skips Payload's revalidate hooks** → call `expireTagsAndPurge` after it. Claiming an app with a pending draft left the old developer on the public page until we did.
-- **Expiring the shared tag made `/` take 34 s for the next visitor** → `catalog` is on every shell. Mark it stale (`"max"`), expire it with `{ expire: 0 }` only when a doc leaves the site.
+- **A direct `payload.db.*` write skips Payload's revalidate hooks** → call `expireTagsAndPurge` after it. One ownership change written that way stayed off the public page until we did.
+- **Expiring the shared tag made `/` take 34 s for the next visitor** → `content` is on every shell. Mark it stale (`"max"`), expire it with `{ expire: 0 }` only when a doc leaves the site.
 - **First visitor after a write waits ~8 s on `/`** → `/` is a PPR page that refreshes inside a visitor's request. Warm it through `WORKER_SELF_REFERENCE`. A `fetch` to the public origin from inside the Worker does not pass through Workers Cache.
 - **Tag lookups at 158 ms** → the Durable Objects were created far from the Worker (probably by a cron, which is not placed). 1.20.15 has no public `locationHint`, so override `generateDOIdArray`. Don't use `shardReplication.regionalReplication`: it keys on the visitor's continent.
 - **The location hint applies only when an object is created** → changing it needs new object names (the `;region-weur` suffix). Objects without the suffix keep the old tags. Expect tags written before the change to be forgotten.
 - **Purge warns "ctx.cache is missing"** → `cache.enabled` is not set in `wrangler.jsonc`, or the runtime is old.
+- **Purge warns "edge cache purge failed" with errors** → `purge()` resolved with `success: false`, usually a rate limit. Workers Cache always gets the Free-tier purge rate limits, whatever the plan ([docs](https://developers.cloudflare.com/workers/cache/purge/)).
+- **The purge runs and nothing changes** → `purge()` is scoped to the entrypoint that calls it. This recipe assumes Workers Cache sits on the default entrypoint, where the write runs. Behind the host gateway ([./workers-cache-host-gateway.md](./workers-cache-host-gateway.md)) the cached pages live under `SharedPages`, so purge from inside that entrypoint (an RPC method on the class, called through `ctx.exports.SharedPages(...)`).
 - **After a deploy** nothing needs purging: Workers Cache is partitioned by Worker version. The tag-cache Durable Objects are not, which is why a rollback does not clear an expired tag. See [`incident-playbook.md`](../06-operations/incident-playbook.md).
 - **Re-check on upgrades:** the `generateDOIdArray` override, `next/dist/server/revalidation-utils` and `work-async-storage.external` are private. The tests catch a change.
 - **Importers and CLIs** → `revalidateTag` throws outside a Next request. Catch it in the hook and set `req.context.disableRevalidate` for imports.
-- **A count on a cached page goes stale in other data centers after a write** → OpenNext's regional tag cache clears only the colo that wrote. One app hit this with a pre-order count on `/` and dropped the regional tag cache: `doShardedTagCache({ baseShardSize: 12 })` with no `regionalCache`. Another keeps it on and covers the 5 s window with the second purge. Pick one.
+- **Default: keep the regional tag cache, with the second purge.** It is what cut tag lookups to 16 ms, and the second purge at 7 s covers its 5 s window for cached pages. Drop it (`doShardedTagCache({ baseShardSize: 12 })` with no `regionalCache`) in one case: a cached page shows a value that changes per write, such as a running count on `/`, and must be right in every data center within those 5 s. The regional tag cache clears only the data center that wrote, so elsewhere the count stays old until the window ends. One app dropped it for that reason and pays the uncached tag lookups.

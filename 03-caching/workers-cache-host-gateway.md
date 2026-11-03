@@ -62,15 +62,15 @@ const SHARED_PATHS = new Set(["/", "/pricing", "/about", "/privacy", "/terms", "
 const SHARED_PREFIXES = ["/features", "/docs", "/guides", "/compare", "/blog"];
 /** The root OG image; the others sit under a shared prefix. */
 const ROOT_OG_IMAGE = /^\/opengraph-image(?:-[\w-]+)?$/;
-/** A widget status poll an embed makes. */
-const WIDGET_STATUS = /^\/widget\/[^/]+\/[^/]+\/status$/;
+/** A status poll an embed makes. */
+const EMBED_STATUS = /^\/embed\/[^/]+\/status$/;
 
 const SHARED_PAGE = "public, max-age=0, s-maxage=600, stale-while-revalidate=86400";
-const SHARED_WIDGET_STATUS = "public, max-age=0, s-maxage=60";
+const SHARED_EMBED_STATUS = "public, max-age=0, s-maxage=60";
 
 /** The Cache-Control Workers Cache may share `path` under, or null when it must not. */
 export function sharedCacheControl(path: string): string | null {
-  if (WIDGET_STATUS.test(path)) return SHARED_WIDGET_STATUS;
+  if (EMBED_STATUS.test(path)) return SHARED_EMBED_STATUS;
   const page = path.length > 1 && path.endsWith(".md") ? path.slice(0, -3) : path; // markdown twins share with their page
   const shared = [path, page].some(
     (p) =>
@@ -144,10 +144,7 @@ export function withSharedCache(request: Request, response: Response): Response 
 ### `worker.ts` (gateway part)
 
 ```ts
-// `.open-next/worker.js` exists only after the build, so the import errors before a build and not after:
-// `@ts-expect-error` would fail one of the two.
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-ignore
+// @ts-ignore `.open-next/worker.js` exists only after a build; worker.ts is excluded from tsconfig
 import { default as handler } from "./.open-next/worker.js";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { forwardsToSharedCache, withSharedCache } from "./src/lib/worker-cache";
@@ -179,7 +176,7 @@ const worker = {
 export default worker;
 
 // OpenNext's Durable Object classes must be exported from the entry.
-// @ts-ignore
+// @ts-ignore generated at build time
 export { DOQueueHandler, DOShardedTagCache } from "./.open-next/worker.js";
 ```
 
@@ -208,7 +205,7 @@ describe("forwardsToSharedCache, the gateway's routing", () => {
   it.each(["/", "/pricing", "/robots.txt", "/sitemap.xml"])(
     "sends %s on a customer's domain straight to the app",
     (path) => {
-      expect(forwardsToSharedCache(at(`https://feedback.acme.com${path}`), "your-domain.com")).toBe(false);
+      expect(forwardsToSharedCache(at(`https://app.acme.com${path}`), "your-domain.com")).toBe(false);
       // a look-alike host that merely contains yours
       expect(forwardsToSharedCache(at(`https://your-domain.com.acme.com${path}`), "your-domain.com")).toBe(false);
     },
@@ -233,9 +230,9 @@ The full test file also covers `withSharedCache`: an allowlisted page gets the s
 curl -sI https://your-domain.com/pricing | grep -i cf-cache-status   # cf-cache-status: MISS
 curl -sI https://your-domain.com/pricing | grep -i cf-cache-status   # cf-cache-status: HIT
 # an app page that reads the viewer is never shared
-curl -sI https://your-domain.com/b/owner/repo | grep -i cf-cache-status   # cf-cache-status: BYPASS
+curl -sI https://your-domain.com/t/some-tenant | grep -i cf-cache-status   # cf-cache-status: BYPASS
 # a customer host never hits the shared cache
-curl -sI https://feedback.acme.com/ | grep -i cf-cache-status        # absent, or not HIT
+curl -sI https://app.acme.com/ | grep -i cf-cache-status        # absent, or not HIT
 ```
 
 Measured from Mumbai against a Frankfurt-placed Worker, three curls each, first byte / total:
@@ -252,9 +249,10 @@ These HIT numbers were taken when the cache sat in front of the whole Worker. Wi
 
 - Cache enabled on the whole Worker → a customer's `/` could be served your cached landing page (found in review, before any customer used it). Cause: the cache key is the path and the lookup happens before any code runs. Fix: the gateway above.
 - A first version marked app-host requests with a header for later code to read. Deciding the host in the gateway removed the need for it and left the proxy's headers unchanged.
-- `www` redirect belongs in the gateway, as a 308, before the cache.
+- If `www` is a Worker custom domain rather than a Redirect Rule (the choice is in [nextjs-on-workers-opennext.md](../01-start/nextjs-on-workers-opennext.md)), redirect it in the gateway, as a 308, before the cache.
 - Next's `private, no-cache, no-store, max-age=0, must-revalidate` also appears on a 200 whose Suspense part crashed. Sharing it for 600 s would pin the broken page. Share it for 60 s only.
 - A shared page reading the viewer on the server (a cookie in a layout, a sign-in state) leaks one user's page to everyone. A landing header should read sign-in state in the browser for this reason. Check a route's layouts before adding it to the allowlist.
 - `workers_dev` on in production → a `*.workers.dev` response can sit in the same cache as the real host. Turn it off for the production Worker. Keeping `ctx.props.host` in the key as well is a second guard.
 - Nothing purges the shared pages. A deploy starts a cold cache, so the first request per page after a deploy is a MISS (3 to 7 s in the table above).
-- Board-style pages that call `connection()` or read `searchParams` answer `BYPASS` and keep their normal speed; do not add them to the allowlist to "fix" that.
+- Purging behind the gateway → `ctx.cache.purge()` is scoped to the entrypoint that calls it ([docs](https://developers.cloudflare.com/workers/cache/purge/)). A purge from the default entrypoint, where writes run, leaves every `SharedPages` entry in place. Fix: give `SharedPages` an RPC method that calls `this.ctx.cache.purge(...)`, and call it from the write through `ctx.exports.SharedPages({ props: { host } }).purgePaths([...])`. **Unverified**: none of the apps behind this cookbook purged a gateway cache.
+- App pages that call `connection()` or read `searchParams` answer `BYPASS` and keep their normal speed; do not add them to the allowlist to "fix" that.

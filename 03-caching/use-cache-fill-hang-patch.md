@@ -59,7 +59,7 @@ The file is under `node_modules/next/dist/`. Find the line with `grep -n skipCro
 
 1. `pnpm install` applies the patch; `grep -n "Cloudflare-Workers" node_modules/next/dist/server/use-cache/use-cache-wrapper.js` finds the line.
 2. Build and deploy, then run the abort loop from Steps against a page with a cold `"use cache"` section.
-3. Expected: each following load completes. Before the patch, 4 of 7 rounds left it stalled. The 4-of-7 figure is recorded; the after-patch run is not.
+3. Expected, not observed: each following load completes. Before the patch, 4 of 7 rounds left it stalled. That figure is recorded; no after-patch run was recorded, so this step is the first proof the patch works.
 
 ## Gotchas
 

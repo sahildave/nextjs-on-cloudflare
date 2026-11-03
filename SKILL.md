@@ -10,16 +10,16 @@ Pick the one recipe whose trigger matches the task and read only that file. Each
 |---|---|
 | First deploy of a Next.js 16 app; `wrangler.jsonc`, `worker.ts`, bundle over 64 MiB, build out of heap | [01-start/nextjs-on-workers-opennext.md](01-start/nextjs-on-workers-opennext.md) |
 | Cached pages 200 but the rest 503 / error 1102; crons missing; startup limit | [01-start/plans-and-limits.md](01-start/plans-and-limits.md) |
-| CI deploys from GitHub Actions, preview versions | [01-start/deploy-from-github-actions.md](01-start/deploy-from-github-actions.md) |
+| CI deploys from GitHub Actions: `main` to production, branches to a preview Worker | [01-start/deploy-from-github-actions.md](01-start/deploy-from-github-actions.md) |
 | Build-time vs runtime env, `wrangler secret bulk` from a secret manager | [01-start/secrets-and-env.md](01-start/secrets-and-env.md) |
 | Postgres/Supabase from a Worker; "different request" I/O error, `EMAXCONNSESSION`, slow region | [02-data/hyperdrive-supabase-postgres.md](02-data/hyperdrive-supabase-postgres.md) |
 | postgres.js; "This socket has been closed" after `sql.end()` | [02-data/postgres-js-on-workers.md](02-data/postgres-js-on-workers.md) |
-| OpenNext R2 cache entries never written | [02-data/r2-put-waituntil.md](02-data/r2-put-waituntil.md) |
-| Serve public pages from Workers Cache; home page never caches | [03-caching/workers-cache-edge-caching.md](03-caching/workers-cache-edge-caching.md) |
+| R2 incremental-cache bucket has no entry for a page that just rendered | [02-data/r2-put-waituntil.md](02-data/r2-put-waituntil.md) |
+| Serve public pages from Workers Cache (allowlist); home page never caches | [03-caching/workers-cache-edge-caching.md](03-caching/workers-cache-edge-caching.md) |
 | Old page shows after a CMS publish or write | [03-caching/cache-invalidation-and-purge.md](03-caching/cache-invalidation-and-purge.md) |
 | 500 "Worker's code had hung" after `revalidateTag`, rollback does not help | [03-caching/cache-components-ppr-on-workers.md](03-caching/cache-components-ppr-on-workers.md) |
-| "Failed to parse postponed state"; PPR shells re-render every time | [03-caching/opennext-prerender-resume-fixes.md](03-caching/opennext-prerender-resume-fixes.md) |
-| Page stalls at a `"use cache"` section after a client disconnect | [03-caching/use-cache-fill-hang-patch.md](03-caching/use-cache-fill-hang-patch.md) |
+| "Failed to parse postponed state"; shell replay falls back to client rendering | [03-caching/opennext-prerender-resume-fixes.md](03-caching/opennext-prerender-resume-fixes.md) |
+| Page stalls at a `"use cache"` section after a client disconnect (patch, after-patch run not recorded) | [03-caching/use-cache-fill-hang-patch.md](03-caching/use-cache-fill-hang-patch.md) |
 | Workers Cache on a Worker that also serves customer domains | [03-caching/workers-cache-host-gateway.md](03-caching/workers-cache-host-gateway.md) |
 | Your own domain onto a Worker, nameserver switch, error 1042 | [04-domains/custom-domain-and-dns-cutover.md](04-domains/custom-domain-and-dns-cutover.md) |
 | `www` to apex 308 | [04-domains/www-redirect-rule.md](04-domains/www-redirect-rule.md) |

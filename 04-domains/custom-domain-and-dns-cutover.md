@@ -15,7 +15,7 @@ You have a Worker running on `*.workers.dev` and a domain at any registrar, poss
 - A deployed Worker you have tested on its `workers.dev` host: [../01-start/nextjs-on-workers-opennext.md](../01-start/nextjs-on-workers-opennext.md), [../01-start/deploy-from-github-actions.md](../01-start/deploy-from-github-actions.md).
 - Access to the registrar (to change nameservers).
 - Know which DNS records exist today: web, mail (MX, SPF, DKIM, DMARC), verification TXT, CAA. Mail records are their own recipe: [./email-dns-records.md](./email-dns-records.md).
-- Decide how `www` behaves: a second Worker custom domain with a redirect in `worker.ts`, or a proxied record plus a Redirect Rule: [./www-redirect-rule.md](./www-redirect-rule.md).
+- `www` goes to the apex through a Redirect Rule, as the base recipe sets out: [./www-redirect-rule.md](./www-redirect-rule.md). The `worker.ts` variant below is for a zone where you cannot add Redirect Rules.
 - A staging host if you want a dress rehearsal first: [../06-operations/staging-and-preview-workers.md](../06-operations/staging-and-preview-workers.md).
 - This recipe is for your own domain. Customer-owned domains on your Worker are a different feature: [./cloudflare-for-saas-custom-hostnames.md](./cloudflare-for-saas-custom-hostnames.md).
 - Cron triggers and secrets already planned: [../05-app-features/cron-triggers.md](../05-app-features/cron-triggers.md), [../01-start/secrets-and-env.md](../01-start/secrets-and-env.md).
@@ -45,18 +45,13 @@ You have a Worker running on `*.workers.dev` and a domain at any registrar, poss
   "name": "your-app",
   "main": "worker.ts",
   // Custom domains need the zone in this account; wrangler creates their DNS
-  // records and certificates. www is a second custom domain, redirected in worker.ts.
-  "routes": [
-    { "pattern": "your-domain.com", "custom_domain": true },
-    { "pattern": "www.your-domain.com", "custom_domain": true }
-  ],
+  // records and certificates. www is not here: a Redirect Rule sends it to the apex.
+  "routes": [{ "pattern": "your-domain.com", "custom_domain": true }],
   // Adding routes turns workers.dev off. Keep it true while you test the deploy
   // before cutover; set it to false once the domain is live. Workers Cache does
   // not key on host, so a workers.dev response (a noindexed one, for example)
   // can be served on the apex. *.workers.dev also sits outside the zone's WAF.
   "workers_dev": false,
-  // Branch deploys still get a version URL.
-  "preview_urls": true,
   // Add at cutover, not before.
   "triggers": { "crons": ["0 4 * * *"] }
 }
@@ -64,9 +59,9 @@ You have a Worker running on `*.workers.dev` and a domain at any registrar, poss
 
 Before cutover, keep `"workers_dev": true` and `"crons": []`, then flip both in the cutover commit (crons on at cutover; `workers_dev` to `false` once the domain is live).
 
-### `worker.ts` (www to apex, 308)
+### Variant: `worker.ts` (www to apex, 308)
 
-Use this when both names are Worker custom domains.
+Only if `www` is a second Worker custom domain (add `{ "pattern": "www.your-domain.com", "custom_domain": true }` to `routes`). The Worker then starts for every `www` request.
 
 ```ts
 export default {
@@ -80,8 +75,6 @@ export default {
   },
 } satisfies ExportedHandler;
 ```
-
-The other option keeps `www` as a proxied record and redirects with a Cloudflare Redirect Rule (host `www.your-domain.com`, 308 to `https://your-domain.com${path}`, query string kept). Details in [./www-redirect-rule.md](./www-redirect-rule.md).
 
 ### DNS records to carry over (one production list, as a template)
 

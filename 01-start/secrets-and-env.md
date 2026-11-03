@@ -8,7 +8,7 @@ path: 01-start/secrets-and-env.md
 ---
 # Secrets and env vars on Cloudflare Workers
 
-A Next.js app on Workers reads env in two places that never see each other. `next build` runs in CI and reads `NEXT_PUBLIC_*` plus any server key it touches while prerendering. The Worker reads everything else from `env` at runtime, as Worker secrets or plain vars. This recipe sets up both paths from one secret store: a CI step exports the build keys, and a script pipes the runtime keys the app actually reads into `wrangler secret bulk`. The examples call a placeholder `secret-export` command; replace it with your manager's JSON export (1Password, Doppler, Vault, Infisical, or a local file for small projects). The shape stays.
+A Next.js app on Workers reads env in two places that never see each other. `next build` runs in CI and reads `NEXT_PUBLIC_*` plus any server key it touches while prerendering. The Worker reads everything else from `env` at runtime, as Worker secrets or plain vars. This recipe sets up both paths from one secret store: a CI step exports the build keys, and a script pipes the runtime keys the app actually reads into `wrangler secret bulk`. The examples call a placeholder `secret-export` command; replace it with your manager's JSON export (1Password, Doppler, Vault, or a local file for small projects). The shape stays.
 
 ## Prerequisites
 
@@ -166,8 +166,27 @@ In CI, the export step logs `Exported for production: DATABASE_URI, NEXT_PUBLIC_
 
 ## Variant: secrets in the deploy step
 
-You can push runtime secrets on every deploy instead of by hand. One store read feeds both places: the build (`$GITHUB_ENV`, each value `::add-mask::`ed) and the Worker (`opennextjs-cloudflare deploy --secrets-file=<file>`). jq writes the JSON to `$RUNNER_TEMP` under `umask 077`, leaving out var-type keys (`APP_ENV`, `GIT_SHA`, `NEXT_PUBLIC_*`), and an `if: always()` step deletes the file.
+You can push runtime secrets on every deploy instead of by hand. `opennextjs-cloudflare deploy` passes flags it does not know through to `wrangler deploy`, which takes `--secrets-file`. The file holds a JSON object of key to value. Write it under `umask 077`, leave out the var-type keys, and delete it in an `if: always()` step.
 
-A stricter compose script reads an explicit allow-list of key names, prints nothing unless every key reads cleanly, refuses values with newlines, refuses a live payment key bound for preview, and refuses a preview sign-in value equal to its production value.
+> **Unverified.** One app ran this shape in production; the steps below were written for this cookbook from its description, not copied from that workflow. Run it once on a preview Worker first.
 
-A third shape takes the runtime key names from that allow-list instead of grepping the source, and drops `NEXT_PUBLIC_*` and build-only keys (source-map upload tokens) before piping to `wrangler secret bulk`.
+```yaml
+      - name: Write runtime secrets file
+        run: |
+          umask 077
+          # Everything except NEXT_PUBLIC_* (build-time) and the plain vars.
+          secret-export --env="$APP_ENV" --format=json |
+            jq -s 'add | map(select(.key | test("^(NEXT_PUBLIC_|APP_ENV$|GIT_SHA$)") | not) | {(.key): .value}) | add // {}' \
+            > "$RUNNER_TEMP/runtime-secrets.json"
+          echo "Runtime keys: $(jq -r 'keys | join(", ")' "$RUNNER_TEMP/runtime-secrets.json")"
+
+      - name: Deploy production
+        if: github.ref == 'refs/heads/main'
+        run: pnpm exec opennextjs-cloudflare deploy --secrets-file="$RUNNER_TEMP/runtime-secrets.json" --var=APP_ENV:production --var=GIT_SHA:"$GIT_SHA"
+
+      - name: Remove runtime secrets file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/runtime-secrets.json"
+```
+
+This pushes every store key, not only the ones the source reads. To narrow it, filter by an explicit allow-list of key names in the `jq` select. `--secrets-file` adds and updates only; a key removed from the store stays on the Worker until `wrangler secret delete`.

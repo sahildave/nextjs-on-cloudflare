@@ -2,7 +2,7 @@
 
 27 recipes for deploying and running Next.js 16 apps on Cloudflare Workers with OpenNext (`@opennextjs/cloudflare`). They cover the adapter setup, Postgres through Hyperdrive, Workers Cache and purging, Cache Components patches, custom domains, Payload CMS, Supabase Auth, images without `sharp`, crons, logs, and an incident playbook.
 
-Every recipe comes from three Next.js apps that moved to Workers and run there in production: a catalog site with Payload CMS and Supabase, a small commerce site, and a multi-tenant app that serves customers' own domains. Where something broke, the recipe has the symptom, the cause and the fix. Code that was not run in the form shown is marked **Unverified**.
+Every recipe comes from three Next.js apps that moved to Workers and run there in production: a content site with Payload CMS and Supabase, a small commerce site, and a multi-tenant app that serves customers' own domains. Where something broke, the recipe has the symptom, the cause and the fix. Code that was not run in the form shown is marked **Unverified**.
 
 Versions: Next 16.3.x, `@opennextjs/cloudflare` 1.20.15, `wrangler` 4.156.2, Node 24. Checked 3 Nov 2026. Patches target exact versions, so regenerate them against yours.
 

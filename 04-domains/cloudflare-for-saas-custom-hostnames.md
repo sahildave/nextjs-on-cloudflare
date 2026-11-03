@@ -1,6 +1,6 @@
 ---
 title: Customer custom domains with Cloudflare for SaaS on Workers
-description: "Let your customers serve their own page from a domain they own (feedback.acme.com) on your Worker, with certificates issued by Cloudflare and no per-domain Worker config."
+description: "Let your customers serve their own page from a domain they own (app.acme.com) on your Worker, with certificates issued by Cloudflare and no per-domain Worker config."
 tags: [cookbook, cloudflare]
 topics: [cloudflare, custom-hostnames, cloudflare-for-saas, multi-tenant, dns, tls, workers]
 date: 2026-11-03
@@ -8,7 +8,7 @@ path: 04-domains/cloudflare-for-saas-custom-hostnames.md
 ---
 # Customer custom domains with Cloudflare for SaaS on Workers
 
-You need this when your product lets a customer put their content on their own hostname (a status page, a feedback board, a docs site). Cloudflare for SaaS adds each hostname to your zone as a "custom hostname", issues its certificate, and sends its traffic to your Worker. Your code adds, reads, re-checks and deletes hostnames over the REST API.
+You need this when your product lets a customer put their content on their own hostname (a status page, a help center, a docs site). Cloudflare for SaaS adds each hostname to your zone as a "custom hostname", issues its certificate, and sends its traffic to your Worker. Your code adds, reads, re-checks and deletes hostnames over the REST API.
 
 This recipe covers the zone setup, the API client, the status mapping for a settings pane and the tests. The Worker side (which tenant a Host header serves) is in [host-based-tenant-routing.md](./host-based-tenant-routing.md). Caching on such a Worker is in [workers-cache-host-gateway.md](../03-caching/workers-cache-host-gateway.md).
 
@@ -303,7 +303,7 @@ function txtRow(r: { name: string; value: string }, host: string): RecordRow {
   return { type: "TXT", name: recordName(r.name, apexOf(host)), value: r.value };
 }
 
-/** The Name column is relative to the apex: `feedback`, not `feedback.acme.com` and not `feedback.`; `@` for the apex. */
+/** The Name column is relative to the apex: `app`, not `app.acme.com` and not `app.`; `@` for the apex. */
 export function recordName(fqdn: string, apexName: string): string {
   const name = fqdn.toLowerCase().replace(/\.$/, "");
   const apex = apexName.toLowerCase().replace(/\.$/, "");
@@ -457,16 +457,16 @@ afterEach(() => {
 });
 
 it("creates the normalized hostname with HTTP DV", async () => {
-  respond(201, { success: true, errors: [], result: { id: "ch_1", hostname: "feedback.acme.com", status: "pending" } });
-  await attachDomain(" Feedback.Acme.com ");
+  respond(201, { success: true, errors: [], result: { id: "ch_1", hostname: "app.acme.com", status: "pending" } });
+  await attachDomain(" App.Acme.com ");
   const [url, init] = fetchMock.mock.calls[0];
   expect(String(url)).toBe("https://api.cloudflare.com/client/v4/zones/zone_test/custom_hostnames");
-  expect(JSON.parse(String(init?.body))).toEqual({ hostname: "feedback.acme.com", ssl: { method: "http", type: "dv" } });
+  expect(JSON.parse(String(init?.body))).toEqual({ hostname: "app.acme.com", ssl: { method: "http", type: "dv" } });
 });
 
 it("returns domain_taken for a duplicate (409, 1406)", async () => {
   respond(409, { success: false, errors: [{ code: 1406, message: "Duplicate custom hostname found." }], result: null });
-  expect(await attachDomain("feedback.acme.com")).toMatchObject({ ok: false, error: { kind: "domain_taken" } });
+  expect(await attachDomain("app.acme.com")).toMatchObject({ ok: false, error: { kind: "domain_taken" } });
 });
 ```
 
@@ -476,13 +476,13 @@ it("returns domain_taken for a duplicate (409, 1406)", async () => {
 
 ```bash
 curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
-  "https://api.cloudflare.com/client/v4/zones/<ZONE_ID>/custom_hostnames?hostname=feedback.acme.com" | jq '.result[0] | {status, ssl: .ssl.status}'
+  "https://api.cloudflare.com/client/v4/zones/<ZONE_ID>/custom_hostnames?hostname=app.acme.com" | jq '.result[0] | {status, ssl: .ssl.status}'
 # before DNS:  { "status": "pending", "ssl": "initializing" }
 # when ready:  { "status": "active",  "ssl": "active" }
 ```
 
-2. After the customer's CNAME lands, `dig +short CNAME feedback.acme.com` returns `domains.your-domain.com.`.
-3. `curl -sI https://feedback.acme.com/` returns 200 from your Worker with a valid certificate.
+2. After the customer's CNAME lands, `dig +short CNAME app.acme.com` returns `domains.your-domain.com.`.
+3. `curl -sI https://app.acme.com/` returns 200 from your Worker with a valid certificate.
 4. Delete the hostname in your UI. The list call above returns `result: []`.
 
 The pipeline had not been run against a live customer hostname when this was written. The API shapes come from Cloudflare's reference and the tests above; the first live add is still to be confirmed.

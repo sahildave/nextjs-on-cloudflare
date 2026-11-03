@@ -8,7 +8,7 @@ path: 05-app-features/outbound-fetch-user-agent.md
 ---
 # Give workerd's outbound fetch a User-Agent
 
-Node's `fetch` sends a `User-Agent`; workerd's does not. GitHub's REST and GraphQL APIs answer 403 to a request without one. The same code works under `next dev` and fails on the Worker. In one app every board looked private, because the "is this repo public" check got a 403. This recipe wraps `globalThis.fetch` once in `worker.ts` so any request without a `User-Agent` gets yours.
+Node's `fetch` sends a `User-Agent`; workerd's does not. GitHub's REST and GraphQL APIs answer 403 to a request without one. The same code works under `next dev` and fails on the Worker. In one app every page that checked whether a repository was public showed it as private, because that check got a 403. This recipe wraps `globalThis.fetch` once in `worker.ts` so any request without a `User-Agent` gets yours.
 
 ## Prerequisites
 

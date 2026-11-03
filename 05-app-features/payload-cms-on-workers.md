@@ -26,7 +26,7 @@ Payload 3 runs inside your Next.js app, so on OpenNext it runs inside the Worker
 4. Add the PBKDF2 fallback. Create `src/lib/pbkdf2-fallback.ts`, then call `installPbkdf2Fallback()` once at the top of `worker.ts`.
 5. Apply the `@payloadcms/ui` patch with pnpm (`patches/` + `patchedDependencies`).
 6. Uploads: use `s3Storage` against R2's S3 endpoint. Do not set Payload's `sharp` option; process images before `payload.create` ([./images-without-sharp.md](./images-without-sharp.md)).
-7. Keep the admin and API out of the shared cache: add `/cms` and `/api/` to the private path list in your Worker cache wrapper, and mark `/cms(/.*)?` and `/api/cms(/.*)?` public in your own auth gate (Payload checks its own users).
+7. Keep the admin and API out of the shared cache: leave `/cms` and `/api/` off the shared allowlist in your Worker cache wrapper (with the denylist variant, add them to `PRIVATE_PREFIXES`), and mark `/cms(/.*)?` and `/api/cms(/.*)?` public in your own auth gate (Payload checks its own users).
 8. Add `afterChange` and `afterDelete` hooks that expire your cache tags and purge Workers Cache: `revalidateHooks` in [../03-caching/cache-invalidation-and-purge.md](../03-caching/cache-invalidation-and-purge.md). A direct `payload.db.*` write skips them; call `expireTagsAndPurge` after it.
 9. Run Payload migrations from a machine, not from the Worker (see Gotchas). Run them before deploying code that needs them.
 10. Deploy and log in once with `wrangler dev --remote`, because only the real runtime enforces the PBKDF2 cap.
@@ -234,8 +234,9 @@ import nodeCrypto from "node:crypto";
 import { pbkdf2Async } from "@noble/hashes/pbkdf2.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 
-// workerd refuses PBKDF2 above 100,000 iterations ("Pbkdf2 failed: iteration
-// counts above 100000 are not supported"). Payload hashes /cms passwords with
+// A deployed Worker refuses PBKDF2 above 100,000 iterations ("Pbkdf2 failed: iteration
+// counts above 100000 are not supported"). The cap is observed, not documented: the
+// hosted runtime sets it, and local workerd has none. Payload hashes /cms passwords with
 // crypto.pbkdf2(sha256) at 600,000, and its login swallows the error, so every
 // login on Workers answered "The email or password provided is incorrect."
 export const WORKERD_PBKDF2_MAX_ITERATIONS = 100_000;
@@ -306,7 +307,7 @@ export function installPbkdf2Fallback(crypto = nodeCrypto): void {
 ### `worker.ts` (the relevant lines)
 
 ```ts
-// @ts-expect-error `.open-next/worker.js` is generated at build time
+// @ts-ignore `.open-next/worker.js` exists only after a build; worker.ts is excluded from tsconfig
 import { default as handler } from "./.open-next/worker.js";
 import { installPbkdf2Fallback } from "./src/lib/pbkdf2-fallback";
 
@@ -318,7 +319,7 @@ export default {
   fetch: (request, env, ctx) => handler.fetch(request, env, ctx),
 } satisfies ExportedHandler;
 
-// @ts-expect-error generated at build time
+// @ts-ignore generated at build time
 export { DOQueueHandler, DOShardedTagCache } from "./.open-next/worker.js";
 ```
 
@@ -505,7 +506,7 @@ describe("installPbkdf2Fallback", () => {
 
 ## Gotchas
 
-- Symptom: `/cms` login says "email or password incorrect" for a correct password. Cause: Payload 3 hashes at 600,000 PBKDF2 iterations, Cloudflare's production runtime caps PBKDF2 at 100,000, and Payload swallows the error. Fix: wrap `crypto.pbkdf2` and send calls over the cap to `@noble/hashes` (byte-identical to Node). Local workerd and miniflare have no cap, so only `wrangler dev --remote` or a real deploy shows it. Cost: about 15 s of CPU per login.
+- Symptom: `/cms` login says "email or password incorrect" for a correct password. Cause: Payload 3 hashes at 600,000 PBKDF2 iterations, a deployed Worker caps PBKDF2 at 100,000 (observed, not documented), and Payload swallows the error. Fix: wrap `crypto.pbkdf2` and send calls over the cap to `@noble/hashes` (byte-identical to Node). Local workerd and miniflare have no cap, so only `wrangler dev --remote` or a real deploy shows it. Cost: about 15 s of CPU per login.
 - Symptom: after that fix, login fails with "cannot begin transaction: Connection terminated unexpectedly" or Payload's generic "Something went wrong" toast. Cause: workerd freezes `Date.now()` and timers during synchronous CPU, so after 15 s of hashing pg's 10 s connect timeout looks already spent. Fix: await one `setTimeout(0)` before the callback, as `installPbkdf2Fallback` does.
 - Symptom: "Cannot perform I/O on behalf of a different request", a hang under a burst, `unhandledRejection: This socket has been closed` on every query, or EMAXCONNSESSION from Supabase. Cause: a per-isolate `pg.Pool`, a missing `'error'` listener, or Hyperdrive's connection limit above the pooler's. Cloudflare's own Payload post suggests `maxUses: 1`; a later port (sourceplane/lumen-payload#9) found a shared pool still hung under 40 parallel requests. Fix: `RequestScopedPool` and the limits in [../02-data/hyperdrive-supabase-postgres.md](../02-data/hyperdrive-supabase-postgres.md).
 - Symptom: Payload reads `DATABASE_URI` once, but Hyperdrive's string is per request. Fix: `RequestScopedPool` reads `hyperdriveUrl()` inside `connect()`. Keep `DATABASE_URI` set anyway for build and scripts.

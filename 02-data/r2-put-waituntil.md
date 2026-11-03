@@ -28,7 +28,7 @@ OpenNext's R2 incremental cache does not await some of its `put` calls. When the
 
 ### `worker.ts`
 ```ts
-// Not type-checked (tsconfig excludes it): `.open-next/worker.js` exists only after the build.
+// @ts-ignore `.open-next/worker.js` exists only after a build; worker.ts is excluded from tsconfig
 import { default as handler } from "./.open-next/worker.js"
 
 const worker = {
@@ -63,6 +63,7 @@ const worker = {
 
 export default worker
 
+// @ts-ignore generated at build time
 export { DOQueueHandler, DOShardedTagCache } from "./.open-next/worker.js"
 ```
 A fuller file also passes each response through `withSharedCache(request, ...)`; that part is left out here.
@@ -70,10 +71,10 @@ A fuller file also passes each response through `withSharedCache(request, ...)`;
 ## Verify
 
 1. Request a new ISR or `"use cache"` page, twice, a few seconds apart.
-2. `wrangler r2 object list your-app-next-cache --prefix <build-id>` (or the dashboard) shows the entry after the first request.
+2. After the first request, the entry is in the bucket. Wrangler has no `r2 object list`; look in the dashboard (R2, `your-app-next-cache`, filter by the build id), fetch a known key with `wrangler r2 object get your-app-next-cache/<key> --remote`, or list with an S3 client against the bucket (`rclone ls r2:your-app-next-cache --include '<build-id>/**'`).
 3. The second request is served from cache instead of rendering again.
 
-Measured on a slow dynamic page, three requests on a fresh build: without the wrapper 41.7, 31.0 and 30.8 s; with it 31.8 s (fills the cache), then 2.7 and 2.6 s. The entry that never persisted was its slowest `"use cache"` fill (up to five sequential GraphQL pages, 4 to 8 s each), because that put starts in the same tick the response body closes.
+Measured on a slow dynamic page, three requests on a fresh build: without the wrapper 41.7, 31.0 and 30.8 s; with it 31.8 s (fills the cache), then 2.7 and 2.6 s. The entry that never persisted was its slowest `"use cache"` fill (up to five sequential API calls, 4 to 8 s each), because that put starts in the same tick the response body closes.
 
 ## Gotchas
 

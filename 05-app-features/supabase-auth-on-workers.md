@@ -13,7 +13,7 @@ Supabase Auth itself needs no change on Workers: `@supabase/ssr` and `supabase-j
 ## Prerequisites
 
 - Next.js on Workers via OpenNext, with `proxy.ts` working: [../01-start/nextjs-on-workers-opennext.md](../01-start/nextjs-on-workers-opennext.md). Versions: Next 16.3.8, `@opennextjs/cloudflare` 1.20.15 (supports the Node `proxy.ts` since 1.20.x; the docs site lags the changelog), wrangler 4.156.x, `@supabase/ssr` 0.12.6, `@supabase/supabase-js` 2.115.0.
-- Workers Cache wrapper that marks private paths `private, no-store`: [../03-caching/workers-cache-edge-caching.md](../03-caching/workers-cache-edge-caching.md). This recipe adds the auth rows to that list.
+- Workers Cache wrapper that marks every unlisted path `private, no-store`: [../03-caching/workers-cache-edge-caching.md](../03-caching/workers-cache-edge-caching.md). This recipe says which auth paths must stay private.
 - `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` and `NEXT_PUBLIC_APP_URL` present at build time. Next inlines `NEXT_PUBLIC_*` into the bundle during `next build`, so a Worker secret set later does not reach the browser: [../01-start/deploy-from-github-actions.md](../01-start/deploy-from-github-actions.md), [../01-start/secrets-and-env.md](../01-start/secrets-and-env.md).
 - A Supabase project with an OAuth provider (Google, GitHub or Apple) configured.
 
@@ -26,7 +26,7 @@ Supabase Auth itself needs no change on Workers: `@supabase/ssr` and `supabase-j
 5. Add `src/proxy.ts` and `src/lib/auth/proxy-session.ts`. The proxy refreshes the session and applies the sign-in gate. List only the routes that need a session in `config.matcher`.
 6. Add `src/app/auth/callback/route.ts` (code exchange) and `src/app/auth/signout/route.ts` (POST). Both redirect to `NEXT_PUBLIC_APP_URL`.
 7. Add `src/app/api/me/route.ts` returning the user with `Cache-Control: private, no-store`, plus a client-side provider that calls it. Public pages render signed out and fill in the user after load.
-8. In `worker-cache.ts`, put `/auth`, `/api/`, and every gated page in the private prefix list. Keep the gate, the matcher and the private list in step with a test.
+8. In `worker-cache.ts`, keep `/auth`, `/api/` and every gated page off the shared allowlist, and keep every page on it free of server-side session reads. With the denylist variant, put those paths in `PRIVATE_PREFIXES` and keep the gate, the matcher and that list in step with a test.
 9. Deploy, sign in on the real domain, then run the Verify checks.
 
 ## Code
@@ -500,9 +500,10 @@ export async function POST(request: Request) {
 
 ### `src/lib/worker-cache.ts` (auth rows only)
 
-The full wrapper is in [../03-caching/workers-cache-edge-caching.md](../03-caching/workers-cache-edge-caching.md). The auth-relevant parts are the private prefixes and the `Set-Cookie` rule.
+The full wrapper is in [../03-caching/workers-cache-edge-caching.md](../03-caching/workers-cache-edge-caching.md). With its allowlist, the auth paths are private because they are not listed: the only auth rule is the `Set-Cookie` one. With the denylist variant, these are the auth rows:
 
 ```ts
+// Denylist variant only.
 export const PRIVATE_PREFIXES = [
   "/dashboard", "/settings", "/submit", // every gated page
   "/auth",                              // login, callback, signout
@@ -515,7 +516,7 @@ export const PRIVATE_PREFIXES = [
 
 ### Test: gated pages are matched and private
 
-Keep the three lists in step with tests (`scripts/auth-proxy.test.ts`, `scripts/worker-cache.test.ts`): the first walks `src/app/**/(protected)` and fails when a page is missing from `config.matcher`; the second fails when a protected route from `src/routes.ts` is not in `PRIVATE_PREFIXES`. Write the same two tests for your layout. The matcher check uses Next's own tester:
+Keep the lists in step with tests (`scripts/auth-proxy.test.ts`, and with the denylist variant `scripts/worker-cache.test.ts`): the first walks `src/app/**/(protected)` and fails when a page is missing from `config.matcher`; the second fails when a protected route from `src/routes.ts` is not in `PRIVATE_PREFIXES`. Write them for your layout. The matcher check uses Next's own tester:
 
 ```ts
 import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
@@ -546,7 +547,7 @@ const matches = unstable_doesMiddlewareMatch({ config, url: "http://localhost:30
 ## Gotchas
 
 - Symptom: the signed-in avatar never appears on cached public pages, or every visitor sees the same avatar. Cause: a cached page cannot read the httpOnly session, and putting the user in the HTML would cache one person's identity for everyone. Fix: render signed out, and have the browser call `/api/me` (private, no-store). The hint cookie keeps signed-out visitors from calling it on every page.
-- Symptom: a session refresh is served to the wrong person. Cause: a response that rotates the session cookie was cached. Fix: `withSharedCache` never keeps a response with `Set-Cookie`, the proxy copies Supabase's no-store headers onto the response, and `/auth`, `/api/` and gated pages are private paths. Put a new gated route in the matcher, the route table and the private list (three places); the two tests above catch a miss.
+- Symptom: a session refresh is served to the wrong person. Cause: a response that rotates the session cookie was cached. Fix: `withSharedCache` never keeps a response with `Set-Cookie`, the proxy copies Supabase's no-store headers onto the response, and `/auth`, `/api/` and gated pages are private paths (unlisted under the allowlist). Put a new gated route in the matcher and the route table, and with the denylist variant in `PRIVATE_PREFIXES` too; the tests above catch a miss.
 - Symptom: a gated page loads for signed-out visitors, or its session never refreshes. Cause: the route is not in `config.matcher`. Fix: add it. Next reads the matcher as literals, so no shared constant.
 - Symptom: after sign-in the browser lands on the `workers.dev` or preview host and the session cookie is for the wrong host. Cause: the callback redirected to `request.url`'s origin. Fix: redirect to the configured `NEXT_PUBLIC_APP_URL`.
 - Symptom: `redirect_to` rejected, or the provider returns to Supabase's Site URL instead of your callback. Cause: the host is not in Supabase's redirect allow-list. Fix: add each host you sign in on (apex, staging, a preview host if you test there). When the domain keeps its name through a hosting move, nothing changes.

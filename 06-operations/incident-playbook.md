@@ -14,7 +14,7 @@ Read this when a site on OpenNext / Workers returns 5xx, hangs, serves a stale p
 
 - `wrangler` 4.156.x logged into the account, and the Worker's name.
 - Next 16.3.8, `@opennextjs/cloudflare` 1.20.15 (the versions these notes come from).
-- Observability on (`"observability": { "enabled": true }` in `wrangler.jsonc`). See `./observability-and-logs.md`.
+- Observability on (`"observability": { "enabled": true }` in `wrangler.jsonc`). See [observability-and-logs.md](./observability-and-logs.md).
 
 ## Steps
 
@@ -38,8 +38,8 @@ Entries, newest first.
 
 ### 1. A CMS save hung every page (3 Nov 2026)
 
-- **Symptom:** after `revalidateTag("catalog", { expire: 0 })`, every page whose shell carries the tag returned 500 "Worker's code had hung" (some ran to a 524). Route handlers and `/cms` kept working. Another app saw the same bug as no first byte for minutes, with nothing in `wrangler tail`.
-- **Cause:** a cache miss rebuilds the shell inside the Worker, and Next's render scheduler assumes Node's `nextTick`. Production never hit it until the first catalog write.
+- **Symptom:** after `revalidateTag("content", { expire: 0 })`, every page whose shell carries the tag returned 500 "Worker's code had hung" (some ran to a 524). Route handlers and `/cms` kept working. Another app saw the same bug as no first byte for minutes, with nothing in `wrangler tail`.
+- **Cause:** a cache miss rebuilds the shell inside the Worker, and Next's render scheduler assumes Node's `nextTick`. Production never hit it until the first content write.
 - **A rollback does not help:** the expired tag lives in the tag-cache Durable Object, which every version reads. A fresh build and deploy restores the site until the next write.
 - **Fix and pre-production test:** the #1318 backport in [../03-caching/cache-components-ppr-on-workers.md](../03-caching/cache-components-ppr-on-workers.md).
 - **Related:** a page that stalls at one `"use cache"` section after a client disconnects is a different bug: [../03-caching/use-cache-fill-hang-patch.md](../03-caching/use-cache-fill-hang-patch.md).
@@ -53,7 +53,7 @@ Entries, newest first.
 
 ### 3. `/cms` login says "email or password incorrect"
 
-- **Cause:** Payload 3 hashes at 600,000 PBKDF2 iterations. Cloudflare's production runtime caps PBKDF2 at 100,000, and Payload swallows the error.
+- **Cause:** Payload 3 hashes at 600,000 PBKDF2 iterations. A deployed Worker caps PBKDF2 at 100,000 (observed, not documented), and Payload swallows the error.
 - **Fix:** wrap `crypto.pbkdf2` in `worker.ts` and route calls above the cap to `@noble/hashes` (same bytes as Node). Local workerd and miniflare have no cap, so only `wrangler dev --remote` shows it. A login then costs ~15 s of CPU.
 - **Follow-on:** workers freeze the clock during synchronous CPU. After that hash, pg's 10 s connect timeout fired instantly ("cannot begin transaction: Connection terminated unexpectedly"). Await one `setTimeout(0)` after long synchronous work. Recipe: [`payload-cms-on-workers.md`](../05-app-features/payload-cms-on-workers.md).
 
@@ -67,7 +67,7 @@ Entries, newest first.
 | Symptom | Cause | Fix |
 |---|---|---|
 | "Cannot perform I/O on behalf of a different request", or a hang under burst | A pg pool shared across requests | Request-scoped pool |
-| `EMAXCONNSESSION` | Hyperdrive limit (default 60) above Supabase's session pooler (15) | Set the origin limit to 10 |
+| `EMAXCONNSESSION` | Hyperdrive's origin limit (60 observed without one, not documented; `wrangler hyperdrive get`) above Supabase's session pooler (15) | `wrangler hyperdrive update <ID> --origin-connection-limit=10` |
 | "Connection terminated unexpectedly" on every query | Direct TLS to Supabase's pooler | Use Hyperdrive |
 | `unhandledRejection: This socket has been closed`, ~5k/hour | Per-query `pg.Client` with no `'error'` listener | Add the listener before `connect()` |
 | Same, from `postgres.js` | Unguarded `tcp.emit('error')` in `cf/polyfills.js` | Patch `postgres@3.4.9` ([../02-data/postgres-js-on-workers.md](../02-data/postgres-js-on-workers.md)) |

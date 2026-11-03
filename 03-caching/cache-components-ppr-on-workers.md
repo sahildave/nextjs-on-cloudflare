@@ -41,10 +41,13 @@ pnpm takes one patch file per package version. A single patch file can carry bot
 ### `patches/@opennextjs__cloudflare@1.20.15.patch`
 
 > **Not reproduced here.** The patch is 268 lines across three files. It is a backport, so regenerate it from the upstream PR instead of copying it by hand.
+>
+> **The PR is still open.** Pin the backport to its head commit at the time of writing, [`9dbb20965a8506c64bb91a9e5bf7e4c19574262c`](https://github.com/opennextjs/opennextjs-cloudflare/pull/1318/commits/9dbb20965a8506c64bb91a9e5bf7e4c19574262c). Reviewers on the PR report a known residual: some runtime prefetch responses still come back as a 1-byte body (`~`), less often than without the PR. This cookbook's apps did not check for it.
 
 ```bash
 pnpm patch @opennextjs/cloudflare@1.20.15      # prints a temp dir
-# in that dir, apply opennextjs/opennextjs-cloudflare#1318 (scheduler + build plugin)
+# in that dir, apply the dist/ changes of opennextjs/opennextjs-cloudflare#1318
+# at 9dbb20965a8506c64bb91a9e5bf7e4c19574262c (scheduler + build plugin)
 pnpm patch-commit '<temp dir>'
 ```
 
@@ -60,26 +63,40 @@ The plugin is enabled only when `cacheComponents` is on and Next is 16.2.0 or la
 
 Test the hang locally. Without the patch, pages return 500 "Worker's code had hung"; with it, 200.
 
-```bash
-pnpm exec opennextjs-cloudflare build
-wrangler dev --local
-# In the local tag-cache state (.wrangler/state), insert a row with expire = now
-# for a tag every shell carries. Then:
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8787/        # 200, not a hang
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:8787/apps/x  # 200
-```
+1. Build and start the Worker locally once, load `/`, then stop it. The first run creates the tag-cache shards.
+   ```bash
+   pnpm exec opennextjs-cloudflare build
+   pnpm exec wrangler dev --local     # load http://localhost:8787/ once, then Ctrl-C
+   ```
+2. Expire a tag that every shell carries (here `content`; use one of your `cacheTag` names). OpenNext's `DOShardedTagCache` keeps tags in a SQLite table `revalidations (tag TEXT PRIMARY KEY, revalidatedAt INTEGER, stale INTEGER, expire INTEGER DEFAULT NULL)`, times in milliseconds. Locally, each shard is a `.sqlite` file under `.wrangler/state/v3/do/<worker-name>-DOShardedTagCache/`. Write the row into every shard, and clear the local regional cache so the old tag data is not served from it:
+   ```bash
+   now=$(($(date +%s)*1000))
+   for f in .wrangler/state/v3/do/your-app-DOShardedTagCache/*.sqlite; do
+     case "$f" in */metadata.sqlite) continue ;; esac
+     sqlite3 "$f" "CREATE TABLE IF NOT EXISTS revalidations (tag TEXT PRIMARY KEY, revalidatedAt INTEGER, stale INTEGER, expire INTEGER DEFAULT NULL);
+                   INSERT OR REPLACE INTO revalidations VALUES ('content', $now, $now, $now);"
+   done
+   rm -rf .wrangler/state/v3/cache
+   ```
+3. Start the Worker again and load pages that carry the tag:
+   ```bash
+   pnpm exec wrangler dev --local
+   curl -s -o /dev/null -m 60 -w '%{http_code}\n' http://localhost:8787/          # 200, not a hang
+   curl -s -o /dev/null -m 60 -w '%{http_code}\n' http://localhost:8787/items/x   # 200
+   ```
+4. To repeat, delete the row from each shard (`DELETE FROM revalidations WHERE tag='content';`) and restart.
 
 The same test on a staging build: cold state plus an expired `_N_T_/...` row in the tag-cache Durable Object. Unpatched, the first request was a 500 "code had hung" and every later one hung past 45 to 60 s. Patched, every request was 200 and the next one warm.
 
 In production: publish a change in the CMS, then check that every page stays 200 and the new content shows at once.
 
 ```bash
-for p in / /categories /apps/some-app; do curl -s -o /dev/null -w "$p %{http_code} %{time_total}s\n" https://your-domain.com$p; done
+for p in / /items /items/some-item; do curl -s -o /dev/null -w "$p %{http_code} %{time_total}s\n" https://your-domain.com$p; done
 ```
 
 ## Gotchas
 
-- **After `revalidateTag(tag, { expire: 0 })`, every page whose shell has the tag returns 500 "Worker's code had hung" (some run to a 524). Route handlers and the CMS still work** → with `cacheComponents`, a cache miss makes Next rebuild the shell inside the Worker, and `runInSequentialTasks` assumes Node's timer ordering. Production never hit the path until the first catalog write, because every page had a build-time shell. Apply the patch.
+- **After `revalidateTag(tag, { expire: 0 })`, every page whose shell has the tag returns 500 "Worker's code had hung" (some run to a 524). Route handlers and the CMS still work** → with `cacheComponents`, a cache miss makes Next rebuild the shell inside the Worker, and `runInSequentialTasks` assumes Node's timer ordering. Production never hit the path until the first content write, because every page had a build-time shell. Apply the patch.
 - **No first byte for minutes, and the invocations never show in `wrangler tail`** → the same bug, on a page with a slow `"use cache"` section. It appears whenever a shell is rebuilt (cold cache or an expired tag); workerd only sometimes cancels the request as hung.
 - **A rollback does not help** → the expired tag lives in the tag-cache Durable Object, which every Worker version reads. A fresh build and deploy fixes the site (its shells are newer than the tag) until the next write.
 - **1.20.15 lists Next `>=16.4.1` as supported, not 16.3.x** → it worked on 16.3.8 with the patch. Re-test on every Next or adapter bump.

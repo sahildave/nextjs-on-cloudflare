@@ -31,6 +31,8 @@ You need this when the nameservers move from another DNS host to Cloudflare and 
 ### Zone file (`your-domain.com.zone`), email and verification records
 
 > **Unverified.** Assembled from one production migration table, not copied from a file that was imported. Diff it against your old host's records before you upload it.
+>
+> The Resend CNAME targets below (`send.forge.rmta.net`, `rsend-euw1.forge.rmta.net`, `links2.resend-dns.com`) and the CAA set are one account's values, tied to its sending region. Take yours from Resend's domain page and your old host's records.
 
 ```
 ; Resend sending. Keep DNS-only (grey cloud) permanently.
