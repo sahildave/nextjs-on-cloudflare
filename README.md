@@ -19,7 +19,7 @@ Each recipe covers one feature, stands on its own, and gives an agent the code, 
 
 Three Next.js apps that moved to Workers and run there in production:
 
-* <img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/futari.png" width="16" alt=""> [macapp.space](https://macapp.space): a directory of Mac apps. Payload CMS, Supabase Postgres and Auth, Stripe for sponsor slots.
+* <img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/macappspace.png" width="16" alt=""> [macapp.space](https://macapp.space): a directory of Mac apps. Payload CMS, Supabase Postgres and Auth, Stripe for sponsor slots.
 * <img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/shareling.png" width="16" alt=""> [shareling.app](https://shareling.app): the web companion to a Mac app. Supabase Auth, Postgres, Stripe.
 * <img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/gitback.png" width="16" alt=""> [gitback.us](https://gitback.us): GitHub-native feedback boards for many teams, each of which can serve its board on its own domain.
 
