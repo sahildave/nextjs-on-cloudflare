@@ -1,3 +1,5 @@
+<p align="center"><img src="banner.png" alt="Next.js on Cloudflare Workers"></p>
+
 # Next.js on Cloudflare Workers: a cookbook for agents
 
 27 recipes for deploying and running Next.js 16 apps on Cloudflare Workers with OpenNext (`@opennextjs/cloudflare`). They cover the adapter setup, Postgres through Hyperdrive, Workers Cache and purging, Cache Components patches, custom domains, Payload CMS, Supabase Auth, images without `sharp`, crons, logs, and an incident playbook.
@@ -29,3 +31,24 @@ Each recipe has Prerequisites, Steps, Code, Verify and Gotchas.
 ## License
 
 Code snippets are under the [MIT License](./LICENSE). The prose is under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+---
+
+<p align="center">
+  <a href="https://www.coduo.co">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/coduo-dark.svg">
+      <img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/coduo-light.svg" height="56" alt="coduo">
+    </picture>
+  </a>
+  <br>
+  creating software<br>with intention
+</p>
+
+<p align="center">
+  <a href="https://www.coduo.co"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/skilltopia.png" width="96" alt="skilltopia"></a>
+  <a href="https://gitsu.app"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/gitsu.png" width="96" alt="gitsu"></a>
+  <a href="https://gitback.us"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/gitback.png" width="96" alt="gitback"></a>
+  <a href="https://shareling.app"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/shareling.png" width="96" alt="shareling"></a>
+  <a href="https://www.coduo.co"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/futari.png" width="96" alt="futari"></a>
+</p>
