@@ -2,40 +2,44 @@
 
 # Next.js on Cloudflare Workers: a cookbook for agents
 
-**27 recipes** for deploying and running Next.js 16 apps on Cloudflare Workers with OpenNext (`@opennextjs/cloudflare`). 
+**26 recipes for running a Next.js 16 app on Cloudflare Workers** with OpenNext (`@opennextjs/cloudflare`), plus a guide for moving off Vercel.
 
-### Covers the adapter setup: 
-* Postgres through Hyperdrive,
-* Workers Cache and purging,
-* Cache Components patches,
-* Custom domains
-* images without `sharp`
-* crons
-* logs,
-* Unrelated tech - Payload CMS, Supabase Auth,
-* and an incident playbook.
+Each recipe covers one feature, stands on its own, and gives an agent the code, the checks and the failures to expect.
 
-### Source 
-Every recipe comes from three Next.js apps that moved to Workers and run there in production:
-* [macapp.space](https://macapp.space) content site with Payload CMS and Supabase
-* [Shareling.app](https://shareling.app) web-app companion to a Mac app, with Supabase Auth, Postgres, Stripe.
-* [gitback.us](https://gitback.us) A multi-tenant user GitHub-native feedback platform that serves clients and end-users. Clients can have custom domains.
+### What it covers
 
-Recipes include the symptoms, the cause and the fix for any quirks.
+* **Setup:** `wrangler.jsonc`, `open-next.config.ts` and a custom `worker.ts`; plan limits; deploys from GitHub Actions; secrets and build-time env.
+* **Data:** Postgres through Hyperdrive with `pg` or `postgres.js`, and R2 writes for the page cache.
+* **Caching:** Workers Cache in front of the app, tag invalidation and purge, and patches for Cache Components (PPR) and `"use cache"` hangs on Workers.
+* **Domains:** DNS cutover, the `www` redirect, email records, customers' own domains through Cloudflare for SaaS, and routing by host.
+* **App features:** images without `sharp`, Payload CMS, Supabase Auth, cron triggers, and outbound `fetch`.
+* **Operations:** logs, a separate preview Worker for branches, and an incident playbook.
 
-> Code that was not run in the form shown is marked **Unverified**.
+### Where the recipes come from
 
-### Last Versions: 
+Three Next.js apps that moved to Workers and run there in production:
+
+* <img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/futari.png" width="16" alt=""> [macapp.space](https://macapp.space): a directory of Mac apps. Payload CMS, Supabase Postgres and Auth, Stripe for sponsor slots.
+* <img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/shareling.png" width="16" alt=""> [shareling.app](https://shareling.app): the web companion to a Mac app. Supabase Auth, Postgres, Stripe.
+* <img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/gitback.png" width="16" alt=""> [gitback.us](https://gitback.us): GitHub-native feedback boards for many teams, each of which can serve its board on its own domain.
+
+Every quirk in a recipe was hit on one of these apps, and the recipe gives the symptom, the cause and the fix.
+
+> [!NOTE]
+> Code we did not run in the exact form shown is marked **Unverified**. Test it before you rely on it.
+
+### Versions
 
 | Package | Version |
-|---------|----------------|
-| Next|16.3.x                |
-| `@opennextjs/cloudflare`    |1.20.15                |
-| `wrangler`  | 4.156.2                |
-| Node   | 24                |
+|---|---|
+| Next.js | 16.3.x |
+| `@opennextjs/cloudflare` | 1.20.15 |
+| `wrangler` | 4.156.2 |
+| Node.js | 24 |
 
-Last updated: 3 Nov 2026.
-Patches target exact versions, so regenerate them against yours.
+Patches target these exact versions. Regenerate them against yours.
+
+Last updated: 2026-11-03
 
 ## Structure
 
@@ -53,34 +57,34 @@ Each recipe has Prerequisites, Steps, Code, Verify and Gotchas.
 
 ## Use it with an agent
 
-Copy paste this into your agent's prompt:
-
-**As a skill** 
+**As a skill.** Paste this into your agent:
 
 ```
-Copy the skill from https://github.com/sahildave/nextjs-on-cloudflare/blob/main/SKILL.md to find the one recipe that fits the task.
+Install the skill from https://github.com/sahildave/nextjs-on-cloudflare by cloning it into your skills folder as nextjs-on-cloudflare (for Claude Code: ~/.claude/skills/nextjs-on-cloudflare). Then use it to deploy this Next.js app to Cloudflare Workers: follow its start-here order, load one recipe at a time, and run each recipe's Verify step before moving on.
 ```
 
-**As a reference** 
+**As a reference.** Without installing anything:
+
 ```
-Read https://github.com/sahildave/nextjs-on-cloudflare/blob/main/AGENTS.md in this cookbook and follow the recipe that matches." It lists a trigger for every recipe and a start-here order for a new app.
+Read https://github.com/sahildave/nextjs-on-cloudflare/blob/main/AGENTS.md. Pick the one recipe whose trigger matches my problem, read it, and apply it to this repo. Run its Verify step and tell me the result. Test anything marked Unverified before relying on it.
 ```
 
+**By hand.** Start with [`01-start/nextjs-on-workers-opennext.md`](01-start/nextjs-on-workers-opennext.md).
 
-**By hand** 
+## Moving from Vercel
 
-Start with `01-start/nextjs-on-workers-opennext.md`. 
+Read [`migrate-from-vercel/README.md`](migrate-from-vercel/README.md) for the cutover order, then the recipes it links. What gets worse on Workers:
 
-## Migration from Vercel
-
-Start with `migrate-from-vercel/nextjs-on-workers-opennext.md` to get the overview of the migration process.
-
-### Gotchas
-* 
-
+* **Uncached renders are slower.** About 1.8 s on Vercel against 2.7 to 7 s on Workers, and 3 to 4 s when a fresh instance starts. Cache public pages in Workers Cache and most visits take 0.3 to 0.4 s.
+* **No `sharp`.** Image processing runs in WASM, which is slower and needs its own setup.
+* **Postgres needs Hyperdrive**, a connection per request, and the Worker placed next to the database.
+* **No preview URL per branch.** Workers that use Durable Objects get none, and OpenNext's cache uses two. Branches deploy to one shared preview Worker, which has no deployment protection unless you add it.
+* **Hard limits:** 64 MiB uncompressed bundle, 128 MB memory per isolate, 1 s startup.
+* **`proxy.ts` (middleware) is labelled experimental** in OpenNext.
+* **Customers' root domains need CNAME flattening** at their DNS provider. An A record does not work with Cloudflare for SaaS.
+* **Stale DNS after the switch.** Some visitors keep reaching Vercel for up to a day or two. Leave the Vercel project running for a few hours after you change nameservers, or they get a 503.
 
 ---
-
 ## License
 
 Code snippets are under the [MIT License](./LICENSE). The prose is under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
@@ -103,5 +107,5 @@ Code snippets are under the [MIT License](./LICENSE). The prose is under [CC BY 
   <a href="https://gitsu.app"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/gitsu.png" width="48" alt="gitsu" title="gitsu"></a>&nbsp;&nbsp;
   <a href="https://gitback.us"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/gitback.png" width="48" alt="gitback" title="gitback"></a>&nbsp;&nbsp;
   <a href="https://shareling.app"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/shareling.png" width="48" alt="shareling" title="shareling"></a>&nbsp;&nbsp;
-  <a href="https://www.coduo.co"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/futari.png" width="48" alt="futari" title="futari"></a>
+  <a href="https://www.coduo.co"><img src="https://raw.githubusercontent.com/sahildave/coduo-skills/main/assets/apps/macappspace.png" width="48" alt="macapp.space" title="macapp.space"></a>
 </p>

@@ -1,5 +1,5 @@
 ---
-name: cloudflare-nextjs-cookbook
+name: nextjs-on-cloudflare
 description: Production recipes for deploying and running Next.js 16 on Cloudflare Workers with OpenNext (@opennextjs/cloudflare). Use when deploying Next.js to Workers, configuring wrangler.jsonc or worker.ts, connecting Postgres or Supabase through Hyperdrive, caching pages in Workers Cache or purging them, running Payload CMS or Supabase Auth on Workers, cron triggers, custom domains and DNS cutover, Cloudflare for SaaS customer domains, or moving a Next.js app off Vercel. Also use when a Worker returns error 1102, 500 "Worker's code had hung", "Cannot perform I/O on behalf of a different request", "Failed to parse postponed state", or sharp fails to load.
 ---
 # Next.js on Cloudflare Workers
