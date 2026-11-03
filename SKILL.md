@@ -19,7 +19,7 @@ Pick the one recipe whose trigger matches the task and read only that file. Each
 | Old page shows after a CMS publish or write | [03-caching/cache-invalidation-and-purge.md](03-caching/cache-invalidation-and-purge.md) |
 | 500 "Worker's code had hung" after `revalidateTag`, rollback does not help | [03-caching/cache-components-ppr-on-workers.md](03-caching/cache-components-ppr-on-workers.md) |
 | "Failed to parse postponed state"; shell replay falls back to client rendering | [03-caching/opennext-prerender-resume-fixes.md](03-caching/opennext-prerender-resume-fixes.md) |
-| Page stalls at a `"use cache"` section after a client disconnect (patch, after-patch run not recorded) | [03-caching/use-cache-fill-hang-patch.md](03-caching/use-cache-fill-hang-patch.md) |
+| Page stalls at a `"use cache"` section after a client disconnect (Next patch) | [03-caching/use-cache-fill-hang-patch.md](03-caching/use-cache-fill-hang-patch.md) |
 | Workers Cache on a Worker that also serves customer domains | [03-caching/workers-cache-host-gateway.md](03-caching/workers-cache-host-gateway.md) |
 | Your own domain onto a Worker, nameserver switch, error 1042 | [04-domains/custom-domain-and-dns-cutover.md](04-domains/custom-domain-and-dns-cutover.md) |
 | `www` to apex 308 | [04-domains/www-redirect-rule.md](04-domains/www-redirect-rule.md) |

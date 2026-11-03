@@ -107,6 +107,12 @@ Recipe: [`hyperdrive-supabase-postgres.md`](../02-data/hyperdrive-supabase-postg
 - **`sharp` missing** → port to WASM. Photon ignores EXIF rotation (the recipe rotates from the header itself) and resvg loads no fonts, so `<text>` in an SVG icon disappears. Recipe: [`images-without-sharp.md`](../05-app-features/images-without-sharp.md).
 - **OpenNext mangles bare `.wasm` imports** and webpack refuses `.wasm` in server code. Use `webpackIgnore` and `serverExternalPackages`; a package with a relative `./x.wasm` import in its workerd entry works.
 
+### 10. Handled `SyntaxError: Unexpected end of JSON input` from `handleRevalidate` (low priority)
+
+- **Symptom:** one handled `SyntaxError: Unexpected end of JSON input` in the logs, thrown from Next's `handleRevalidate`. Seen once, no visitor impact.
+- **Cause:** `JSON.parse` of an empty background-revalidation response body.
+- **Action:** watch the count. Do not fix it unless it repeats or a page stays stale.
+
 ## Verify
 
 After any fix, confirm on the live site, not the build:

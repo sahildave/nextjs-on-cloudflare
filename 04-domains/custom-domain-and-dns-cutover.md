@@ -30,7 +30,7 @@ You have a Worker running on `*.workers.dev` and a domain at any registrar, poss
 6. Remove any existing record for each name you are about to attach. A Worker custom domain cannot be created while a record exists for that name. (Skip if the zone has no web records yet.)
 7. Switch the nameservers at the registrar to the two Cloudflare gave you. Resolvers keep the old ones for up to the registrar's NS TTL (3 hours for `.app`).
 8. In the Cloudflare dashboard press "Check nameservers now" right after the switch, then wait for the zone to turn Active. On one domain that took about 40 minutes, and the certificate was ready about 2 minutes later.
-9. Deploy the Worker (`wrangler deploy`). Wrangler creates the DNS records and certificates for each `custom_domain` route. Resolvers that already follow Cloudflare get no address for a name until the zone is active.
+9. Push production secrets first if this is the Worker's first production deploy ([../01-start/secrets-and-env.md](../01-start/secrets-and-env.md)). Then deploy the Worker (`wrangler deploy`). Wrangler creates the DNS records and certificates for each `custom_domain` route. Resolvers that already follow Cloudflare get no address for a name until the zone is active.
 10. Verify (below). Then set `"workers_dev": false` for production and deploy again.
 11. Turn on cron triggers now, not before, or the old host's crons and the Worker's run every job twice.
 12. Keep the old project deployed but with git deploys off. Pause it later (a day or a week; see Gotchas).
@@ -122,6 +122,8 @@ export default {
 ## Gotchas
 
 - Symptom: the dashboard quick scan imports the old host's IPs as proxied A records and misses the Resend (mail) records. Cause: the scan reads live resolvers, not the provider's zone. Fix: delete what it imported and upload a zone file (Import, proxy unticked). Mail records stay DNS-only.
+- With both the apex and `www` as `custom_domain: true` routes, one deploy attaches both once the old A and CNAME records for those names are deleted.
+- Omit `workers_dev` from the production config. When routes exist, the deploy then disables `workers.dev`, which is the production default. Set it to `true` only for a pre-cutover test.
 - Symptom: Worker custom domain cannot be added. Cause: a record already exists for that name. Fix: delete the CNAME/A for that name first, then deploy.
 - Symptom: `workers.dev` returns error 1042 or stops answering after adding `routes`. Cause: any `routes` entry turns workers.dev off. Fix: `"workers_dev": true` to test there before cutover.
 - Symptom: the real domain serves a `noindex` response, or a preview-only response. Cause: workers.dev was left on; Workers Cache does not key on host, so its response got cached and served on the apex. A deploy clears it; the zone's "Purge Everything" does not. Fix: `"workers_dev": false` in production.

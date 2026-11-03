@@ -17,7 +17,7 @@ Symptom: some pages render the shell, then stall at a `"use cache"` section with
 
 ## Steps
 
-1. Reproduce first. In production, pages stalled at one `"use cache"` list in 4 of 7 abort rounds (a client disconnects mid-load, then the page is loaded again). Use the same loop on a page with a cold `"use cache"` section.
+1. Reproduce first, on a deployed Worker. Each round aborts one request after 1.5 s, then sends 3 requests in parallel. Before the patch, 4 of 7 rounds stalled: the response stopped at the same byte every time and a Suspense boundary never filled. Run the loop against a page with a cold `"use cache"` section. It never reproduces under local `wrangler dev`, which does not cancel a request when its client disconnects.
 2. Run `pnpm patch next@<version>`, edit the two files below in the directory pnpm prints, then `pnpm patch-commit <dir>`.
 3. Commit `patches/next@<version>.patch` and the `patchedDependencies` entry.
 4. Bump the patch whenever Next's version changes; the line numbers move and the hunk may not apply.
@@ -34,9 +34,9 @@ patchedDependencies:
 
 ### `patches/next@16.3.6.patch`
 
-> **Proven on `next@16.3.6` only, and shown as a hunk.** It ran in production on 16.3.6; it has not been run on 16.3.8 or later. The diff below has no `diff --git` or `index` line and the CJS copy is described, not shown, so regenerate the patch with `pnpm patch` against your exact Next version.
+> **Proven on `next@16.3.6` only, and shown as a hunk.** With the patch deployed, 0 of 36 abort rounds stalled. It has not been run on 16.3.8 or later. The diff below has no `diff --git` or `index` line and the CJS copy is described, not shown, so regenerate the patch with `pnpm patch` against your exact Next version.
 
-The same hunk in two files, `dist/esm/server/use-cache/use-cache-wrapper.js` and `dist/server/use-cache/use-cache-wrapper.js`. Shown here for the ESM file; the context lines differ by a few lines in the CJS one.
+The same change in two files, `dist/server/use-cache/use-cache-wrapper.js` (about line 2050) and `dist/esm/server/use-cache/use-cache-wrapper.js` (about line 1994). The line sets `skipCrossRequestDedupe`, which stops requests from joining a fill that another request started (the module-level map is `crossRequestPendingCacheInvocations`). Shown here for the ESM file; the context lines differ by a few lines in the CJS one.
 
 ```diff
 --- a/dist/esm/server/use-cache/use-cache-wrapper.js
@@ -59,7 +59,7 @@ The file is under `node_modules/next/dist/`. Find the line with `grep -n skipCro
 
 1. `pnpm install` applies the patch; `grep -n "Cloudflare-Workers" node_modules/next/dist/server/use-cache/use-cache-wrapper.js` finds the line.
 2. Build and deploy, then run the abort loop from Steps against a page with a cold `"use cache"` section.
-3. Expected, not observed: each following load completes. Before the patch, 4 of 7 rounds left it stalled. That figure is recorded; no after-patch run was recorded, so this step is the first proof the patch works.
+3. Every following load completes. With the patch, 0 of 36 rounds stalled; without it, 4 of 7 did.
 
 ## Gotchas
 
@@ -67,4 +67,4 @@ The file is under `node_modules/next/dist/`. Find the line with `grep -n skipCro
 - The dedup is a cost optimisation. With it off, N concurrent cold requests for one key run N fills inside an isolate. Cache hits are unaffected.
 - A hang with no first byte at all is a different bug: the cache-components scheduler on workerd. See [cache-components-ppr-on-workers.md](./cache-components-ppr-on-workers.md).
 - A patch against `dist/` breaks silently if the file moves. After a Next bump, run the grep in Verify before shipping.
-- This showed up only in production abort rounds. Add an abort loop to your pre-launch checks.
+- This shows up only on deployed Workers. Add the abort loop to your pre-launch checks and run it against production-like infrastructure, not `wrangler dev`.

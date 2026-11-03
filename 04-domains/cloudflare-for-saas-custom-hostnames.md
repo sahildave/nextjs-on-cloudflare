@@ -12,7 +12,7 @@ You need this when your product lets a customer put their content on their own h
 
 This recipe covers the zone setup, the API client, the status mapping for a settings pane and the tests. The Worker side (which tenant a Host header serves) is in [host-based-tenant-routing.md](./host-based-tenant-routing.md). Caching on such a Worker is in [workers-cache-host-gateway.md](../03-caching/workers-cache-host-gateway.md).
 
-> **Not run live.** The pipeline had not added a real customer hostname when this was written. The API shapes come from Cloudflare's reference and the unit tests below. Treat the first live add as the real test.
+> **Proven end to end** on a live customer hostname: the zone setup below, then a customer CNAME and TXT, then a certificate. **Open:** the `*/*` route was added in the dashboard, not in `wrangler.jsonc`. It is not confirmed whether a CI deploy keeps a dashboard-added route, so check the route list after your first CI deploy.
 
 This is not the recipe for putting your own domain on a Worker. For that, see [custom-domain-and-dns-cutover.md](./custom-domain-and-dns-cutover.md).
 
@@ -25,11 +25,11 @@ This is not the recipe for putting your own domain on a Worker. For that, see [c
 
 ## Steps
 
-1. Enable Cloudflare for SaaS: zone dashboard, SSL/TLS, Custom Hostnames.
+1. Enable Cloudflare for SaaS: zone dashboard, SSL/TLS, Custom Hostnames. This is a dashboard checkout (terms plus a card authorization, $0 base) that only the account owner can complete.
 2. Create the CNAME target. In DNS, add `AAAA domains 100::` with the proxy on (a proxied, originless record). Customers will CNAME to `domains.your-domain.com`.
-3. On the Custom Hostnames page, set Fallback Origin to `domains.your-domain.com` and wait until it reads Active.
-4. Route the zone to the Worker. Add the route `*/*` to the production Worker, at cutover and not before: it sends every proxied hostname on the zone to the Worker, your own host and every custom hostname. A more specific route (for example `staging.your-domain.com/*` to a staging Worker) wins over it. See Cloudflare's "Worker as origin" page.
-5. Add the routes `*/.well-known/acme-challenge/*` and `*/.well-known/pki-validation/*` with Worker set to None, so the Worker never answers a certificate check. Cloudflare's DCV troubleshooting asks for this when a Worker is the fallback origin. It had not been seen to matter on a live certificate when this was written.
+3. On the Custom Hostnames page, set Fallback Origin to `domains.your-domain.com` and wait until it reads Active (a few minutes).
+4. Route the zone to the Worker. Add the route `*/*` to the production Worker, at cutover and not before: it sends every proxied hostname on the zone to the Worker, your own host and every custom hostname. A more specific route (for example `staging.your-domain.com/*` to a staging Worker) wins over it, and so do Worker custom domains (apex and `www`). See Cloudflare's "Worker as origin" page.
+5. Add the routes `*/.well-known/acme-challenge/*` and `*/.well-known/pki-validation/*` with Worker set to None, so the Worker never answers a certificate check. Cloudflare's DCV troubleshooting asks for this when a Worker is the fallback origin.
 6. Put `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ZONE_ID` in your secret store and push them to the Worker (see [secrets-and-env.md](../01-start/secrets-and-env.md)). A missing value must leave custom domains unavailable and the app booting.
 7. Add the client (`src/lib/domains/cloudflare.ts`, `cloudflare-env.ts`, `types.ts`).
 8. Order the attach flow: authorize the caller, check the plan, check your own record for a conflict, call Cloudflare, then write your record. If the write fails, delete the hostname from the zone again. Calling the provider before authorizing is the usual mistake.
@@ -485,7 +485,7 @@ curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \
 3. `curl -sI https://app.acme.com/` returns 200 from your Worker with a valid certificate.
 4. Delete the hostname in your UI. The list call above returns `result: []`.
 
-The pipeline had not been run against a live customer hostname when this was written. The API shapes come from Cloudflare's reference and the tests above; the first live add is still to be confirmed.
+On the live hostname, HTTP validation issued the certificate about a minute after the customer added the CNAME and the TXT record.
 
 ## Gotchas
 
@@ -493,6 +493,7 @@ The pipeline had not been run against a live customer hostname when this was wri
 - Staging and production share the zone → a hostname attached on one is a duplicate (409, code 1406) on the other → use separate test hostnames, or a separate zone for staging.
 - Cloudflare addresses a hostname by id, your store keeps the host → read, re-check and delete need a lookup → list `?hostname=` first (one call per poll).
 - Cloudflare's `verification_errors` and `ssl.validation_errors` are its and the CA's prose → not worth showing → a stalled domain gets generic tips. Say so in your docs.
+- The `*/*` route lives in the dashboard here, not in `wrangler.jsonc`, and whether a CI deploy keeps it is unconfirmed. Look at Workers Routes after a CI deploy.
 - `*/*` route added too early → every hostname on the zone, including your production host, reaches the new Worker → add it at the production cutover, not during staging.
 - Two custom-hostname caps to keep apart: Cloudflare's zone limit (100 included) and your own per-plan caps. Keep your per-plan caps (for example three per paid account) below the zone limit.
 - Cloudflare's PATCH re-check is the "Check now" button. Without it, validation retries on Cloudflare's backoff schedule.

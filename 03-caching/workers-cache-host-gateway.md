@@ -232,7 +232,7 @@ curl -sI https://your-domain.com/pricing | grep -i cf-cache-status   # cf-cache-
 # an app page that reads the viewer is never shared
 curl -sI https://your-domain.com/t/some-tenant | grep -i cf-cache-status   # cf-cache-status: BYPASS
 # a customer host never hits the shared cache
-curl -sI https://app.acme.com/ | grep -i cf-cache-status        # absent, or not HIT
+curl -sI https://app.acme.com/ | grep -i cf-cache-status        # absent
 ```
 
 Measured from Mumbai against a Frankfurt-placed Worker, three curls each, first byte / total:
@@ -247,6 +247,7 @@ These HIT numbers were taken when the cache sat in front of the whole Worker. Wi
 
 ## Gotchas
 
+- Responses on a customer's custom hostname carry no `cf-cache-status` header, because they never reach the cached entrypoint. Checked on a live customer hostname. Use that as the proof the gateway works.
 - Cache enabled on the whole Worker → a customer's `/` could be served your cached landing page (found in review, before any customer used it). Cause: the cache key is the path and the lookup happens before any code runs. Fix: the gateway above.
 - A first version marked app-host requests with a header for later code to read. Deciding the host in the gateway removed the need for it and left the proxy's headers unchanged.
 - If `www` is a Worker custom domain rather than a Redirect Rule (the choice is in [nextjs-on-workers-opennext.md](../01-start/nextjs-on-workers-opennext.md)), redirect it in the gateway, as a 308, before the cache.
